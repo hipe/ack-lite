@@ -10,11 +10,18 @@ module Hipe
     # idea is that this is your only interface to it, this and Cli
 
     class Request < Struct.new(:files, :dirs, :path, :regexp_str, :regexp_opts_str); end
-    class ValidRequest < Struct.new(:files, :dirs, :path, :regexp); end
+    class ValidRequest < Struct.new(:files, :dirs, :path, :regexp_str); end
+    class SearchResponse < Struct.new(:command, :list); end
     module Service
       class << self
         def search request
           valid = validate request
+          cmd = self.find_cmd request
+          cmd <<  " | xargs grep --line-number #{request.regexp_str}"
+          resp = SearchResponse.new
+          resp.list = lines_from_command cmd
+          resp.command = cmd
+          resp
         end
 
         # from Textmate:
@@ -27,7 +34,7 @@ module Hipe
           cmd = "find -L #{e_sh request.path} "
           and_me = []
           if 0 < request.dirs.length
-            and_me << (' -not \( -type d \(' << (request.dirs.map{|x| "-name #{x}"} * ' -o ') <<
+            and_me << (' -not \( -type d \( ' << (request.dirs.map{|x| "-name #{x}"} * ' -o ') <<
               ' \) -prune  \)' )
           end
           if 0 < request.files.length
@@ -39,12 +46,16 @@ module Hipe
 
         def files request
           cmd = find_cmd request
+          lines_from_command cmd
+        end
+
+        def lines_from_command cmd
           stdin, stdout, stderr = Open3.popen3(cmd)
           out = stdout.read
           err = stderr.read
           err.strip!
           if (0 < err.length)
-            raise Fail.new(err)
+            raise Fail.new(err << "(from command: #{cmd})")
           end
           out.split("\n")
         end
@@ -55,24 +66,25 @@ module Hipe
             raise Fail.new("path must exist: #{request.path}")
           end
           valid.path = request.path
-          opts = 0
-          letters = request.regexp_opts_str.split('')
-          letters.each do |letter|
-            case letter
-              when 'i': opts |= Regexp::IGNORECASE
-              when 'm': opts |= Regexp::MULTILINE
-              when 'x': opts |= Regexp::EXTENDED
-              else raise Fail.new(%|unrecognized option: '#{letter}'. | <<
-                "Expecting 'i','m', or 'x'")
-            end
-          end
-          begin
-            regexp = Regexp.new(request.regexp_str, opts)
-          rescue RegexpError => e
-            e.extend Failey
-            raise e
-          end
-          valid.regexp = regexp
+          # opts = 0
+          # letters = request.regexp_opts_str.split('')
+          # letters.each do |letter|
+            # case letter
+              # when 'i': opts |= Regexp::IGNORECASE
+              # when 'm': opts |= Regexp::MULTILINE
+              # when 'x': opts |= Regexp::EXTENDED
+              # else raise Fail.new(%|unrecognized option: '#{letter}'. | <<
+              #  "Expecting 'i','m', or 'x'")
+            # end
+          # end
+          # begin
+          #   regexp = Regexp.new(request.regexp_str, opts)
+          # rescue RegexpError => e
+          #   e.extend Failey
+          #   raise e
+          # end
+          # valid.regexp = regexp
+          valid.regexp_str = request.regexp_str
           valid.dirs = request.dirs
           valid.files = request.files
           valid
