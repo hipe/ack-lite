@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>command</key>
+	<string>${TM_RUBY:-/usr/bin/env ruby} &lt;&lt;"[RUBY]" -rcgi
+    require ENV['TM_BUNDLE_SUPPORT'] + '/controllers.rb'
+    Hipe::AckLite::TmBundle.singleton.present_search
+[RUBY]</string>
+	<key>input</key>
+	<string>none</string>
+	<key>keyEquivalent</key>
+	<string>@K</string>
+	<key>name</key>
+	<string>Ack Lite</string>
+	<key>output</key>
+	<string>showAsHTML</string>
+	<key>uuid</key>
+	<string>E1966FE3-4B65-419A-85CA-4447BC63ECAE</string>
+</dict>
+</plist>

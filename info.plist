@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>mainMenu</key>
+	<dict>
+		<key>items</key>
+		<array>
+			<string>E1966FE3-4B65-419A-85CA-4447BC63ECAE</string>
+		</array>
+		<key>submenus</key>
+		<dict/>
+	</dict>
+	<key>name</key>
+	<string>Ack Lite</string>
+	<key>uuid</key>
+	<string>E3C2D3AD-8AAB-4CE6-87CE-47997F5D950D</string>
+</dict>
+</plist>
