@@ -68,6 +68,9 @@ module Hipe
 
       def process_search_request request
         plist_ruby = OSX::PropertyList::load request
+        try
+
+
         if plist_ruby['model'] # should always be here
           write_model plist_ruby['model']
         end
@@ -79,6 +82,7 @@ module Hipe
       def write_model plist_ruby
         copy = plist_ruby.dup
         copy.delete('searchButtonKey')
+        copy.delete('note')
         encoded = copy.to_json
         defaults_cmd = <<-HERE.gsub(/(?:\n|^          )/,' ')
           defaults write com.macromates.textmate
