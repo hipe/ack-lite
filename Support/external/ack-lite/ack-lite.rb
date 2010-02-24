@@ -42,7 +42,7 @@ module Hipe
           end
           cmd = self.find_cmd_head request
           opts = request.grep_opts_argv * ' '
-          cmd << " -exec grep --line-number -E --with-filename #{opts} "<<
+          cmd << " -exec grep --line-number -E -I --with-filename #{opts} "<<
                   " #{request.regexp_string}  \{\} ';'"
           resp = SearchResponse.new
           resp.list = lines_from_command cmd
