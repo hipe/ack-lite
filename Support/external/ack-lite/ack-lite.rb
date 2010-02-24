@@ -2,51 +2,95 @@ require 'open3'
 
 module Hipe
   module AckLite
+    # kind of ridiculous to model this as 'Service' or a 'Proxy' but the
+    # idea is that there is only one interface to it -- a request in a
+    # certain structure and a response in a certain structure
+
     module Failey; end
     class Fail < RuntimeError
       include Failey
     end
-    # kind of ridiculous to call it a 'Service' or a 'Proxy' but the
-    # idea is that this is your only interface to it, this and Cli
-
-    class Request < Struct.new(:files, :dirs, :path, :regexp_str, :regexp_opts_str); end
-    class ValidRequest < Struct.new(:files, :dirs, :path, :regexp_str); end
+    class Request < Struct.new(
+      :directory_ignore_patterns,
+      :file_include_patterns,
+      :search_paths,
+      :regexp_string,
+      :regexp_opts_argv
+    )
+      def self.make *args
+        if (args.size == 1 && args[0].kind_of?(Hash))
+          req = self.new
+          args[0].each do |pair|
+            req.send("#{pair[0]}=",pair[1])
+          end
+        else
+          req = self.new(*args)
+        end
+        req
+      end
+    end
     class SearchResponse < Struct.new(:command, :list); end
+
     module Service
       class << self
-        def search request
-          valid = validate request
+
+        def search *args
+          request = make_request *args
+          if request.kind_of? Hash
+            request = Request.make request
+          end
           cmd = self.find_cmd request
-          cmd <<  " | xargs grep --line-number #{request.regexp_str}"
+          cmd <<  " | xargs grep --line-number #{request.regexp_string}"
           resp = SearchResponse.new
           resp.list = lines_from_command cmd
           resp.command = cmd
           resp
         end
 
+        def files *args
+          cmd = find_cmd make_request *args
+          lines_from_command cmd
+        end
+
+        # "private"
+        def make_request(*args)
+          if (args.size==1 && args[0].kind_of?(Request))
+            args[0]
+          else
+            Request.make *args
+          end
+        end
+
         # from Textmate:
-        # escape text to make it useable in a shell script as one “word” (string)
+        # escape text to make it useable in a shell script as one “
+        # word” (string)
         def e_sh(str)
-        	str.to_s.gsub(/(?=[^a-zA-Z0-9_.\/\-\x7F-\xFF\n])/n, '\\').gsub(/\n/, "'\n'").sub(/^$/, "''")
+        	str.to_s.gsub(/(?=[^a-zA-Z0-9_.\/\-\x7F-\xFF\n])/n, '\\').
+        	  gsub(/\n/, "'\n'").sub(/^$/, "''")
         end
 
         def find_cmd request
-          cmd = "find -L #{e_sh request.path} "
+          paths_part = request.search_paths.map{|x| e_sh(x)} * ' '
+          cmd = "find -L #{paths_part} "
           and_me = []
-          if 0 < request.dirs.length
-            and_me << (' -not \( -type d \( ' << (request.dirs.map{|x| "-name #{x}"} * ' -o ') <<
-              ' \) -prune  \)' )
+          dirs = request.directory_ignore_patterns
+          files = request.file_include_patterns
+          if 0 < dirs.length
+            and_me << (
+              ' -not \( -type d \( ' <<
+              (dirs.map{|x| "-name #{x}"} * ' -o ') <<
+              ' \) -prune  \)'
+            )
           end
-          if 0 < request.files.length
-            and_me <<  ('\( ' << (request.files.map{|x| "-name \"#{x}\""} * ' -o ') << ' \)' )
+          if 0 < files.length
+            and_me <<  (
+              '\( ' <<
+              (files.map{|x| "-name \"#{x}\""} * ' -o ') <<
+              ' \)'
+            )
           end
           cmd << ( and_me * ' -a ')
           cmd
-        end
-
-        def files request
-          cmd = find_cmd request
-          lines_from_command cmd
         end
 
         def lines_from_command cmd
@@ -58,36 +102,6 @@ module Hipe
             raise Fail.new(err << "(from command: #{cmd})")
           end
           out.split("\n")
-        end
-
-        def validate request
-          valid = ValidRequest.new
-          if ! File.directory?(request.path)
-            raise Fail.new("path must exist: #{request.path}")
-          end
-          valid.path = request.path
-          # opts = 0
-          # letters = request.regexp_opts_str.split('')
-          # letters.each do |letter|
-            # case letter
-              # when 'i': opts |= Regexp::IGNORECASE
-              # when 'm': opts |= Regexp::MULTILINE
-              # when 'x': opts |= Regexp::EXTENDED
-              # else raise Fail.new(%|unrecognized option: '#{letter}'. | <<
-              #  "Expecting 'i','m', or 'x'")
-            # end
-          # end
-          # begin
-          #   regexp = Regexp.new(request.regexp_str, opts)
-          # rescue RegexpError => e
-          #   e.extend Failey
-          #   raise e
-          # end
-          # valid.regexp = regexp
-          valid.regexp_str = request.regexp_str
-          valid.dirs = request.dirs
-          valid.files = request.files
-          valid
         end
       end
     end
