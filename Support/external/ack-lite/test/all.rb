@@ -71,8 +71,11 @@ describe Hipe::AckLite do
       "./test/data/uvw.def:1:foo-bar"
     ])
     have = Set.new(response.list)
-    (have.subset? tgt).must_equal true
-    (tgt.subset? have).must_equal true
+    debugger
+    'x'
+
+    f1 = ((have.subset? tgt).must_equal true)
+    f2 = ((tgt.subset? have).must_equal true)
   end
 
   it "should do case sensitive" do

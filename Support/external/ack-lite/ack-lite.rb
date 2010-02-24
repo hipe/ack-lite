@@ -40,10 +40,10 @@ module Hipe
           if request.kind_of? Hash
             request = Request.make request
           end
-          cmd = self.find_cmd request
+          cmd = self.find_cmd_head request
           opts = request.grep_opts_argv * ' '
-          cmd <<  " | xargs grep --line-number #{opts} "<<
-                  " #{request.regexp_string}"
+          cmd << " -exec grep --line-number -E --with-filename #{opts} "<<
+                  " #{request.regexp_string}  \{\} ';'"
           resp = SearchResponse.new
           resp.list = lines_from_command cmd
           resp.command = cmd
@@ -51,7 +51,7 @@ module Hipe
         end
 
         def files *args
-          cmd = find_cmd make_request(*args)
+          cmd = find_cmd_head make_request(*args)
           lines_from_command cmd
         end
 
@@ -72,7 +72,7 @@ module Hipe
         	  gsub(/\n/, "'\n'").sub(/^$/, "''")
         end
 
-        def find_cmd request
+        def find_cmd_head request
           paths_part = request.search_paths.map{|x| e_sh(x)} * ' '
           cmd = "find -L #{paths_part} "
           and_me = []
@@ -102,7 +102,7 @@ module Hipe
           err = stderr.read
           err.strip!
           if (0 < err.length)
-            raise Fail.new(err << "(from command: #{cmd})")
+            raise Fail.new(err << "(from command:___#{cmd}___)")
           end
           out.split("\n")
         end
