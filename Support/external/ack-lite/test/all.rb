@@ -18,7 +18,7 @@ describe Hipe::AckLite do
         :directory_ignore_patterns => ['.git'],
         :search_paths => ['.'],
         :regexp_string => 'foo',
-        :regexp_opts_argv => ['-i']
+        :grep_opts_argv => ['-i']
       )
     end
   end
@@ -73,7 +73,29 @@ describe Hipe::AckLite do
     have = Set.new(response.list)
     (have.subset? tgt).must_equal true
     (tgt.subset? have).must_equal true
+  end
 
+  it "should do case sensitive" do
+    results = Hipe::AckLite::Service.search(
+      ['skip-me'],[],['./test/data'],'abc',[]
+    )
+    results.list.size.must_equal 1
+  end
+
+  it "should do case insensitive" do
+    results = Hipe::AckLite::Service.search(
+      ['skip-me'],[],['./test/data'],'abc',['-i']
+    )
+    results.list.size.must_equal 2
+  end
+
+  it "should throw on bad options passed to grep" do
+    e  = proc do
+      Hipe::AckLite::Service.search(
+        ['skip-me'],[],['./test/data'],'abc',['-j']
+      )
+    end.must_raise(Hipe::AckLite::Fail)
+    e.message.must_match(/grep: invalid option -- j/)
   end
 
 end

@@ -15,7 +15,7 @@ module Hipe
       :file_include_patterns,
       :search_paths,
       :regexp_string,
-      :regexp_opts_argv
+      :grep_opts_argv
     )
       def self.make *args
         if (args.size == 1 && args[0].kind_of?(Hash))
@@ -26,6 +26,7 @@ module Hipe
         else
           req = self.new(*args)
         end
+        req.grep_opts_argv ||= []
         req
       end
     end
@@ -35,12 +36,14 @@ module Hipe
       class << self
 
         def search *args
-          request = make_request *args
+          request = make_request(*args)
           if request.kind_of? Hash
             request = Request.make request
           end
           cmd = self.find_cmd request
-          cmd <<  " | xargs grep --line-number #{request.regexp_string}"
+          opts = request.grep_opts_argv * ' '
+          cmd <<  " | xargs grep --line-number #{opts} "<<
+                  " #{request.regexp_string}"
           resp = SearchResponse.new
           resp.list = lines_from_command cmd
           resp.command = cmd
@@ -48,7 +51,7 @@ module Hipe
         end
 
         def files *args
-          cmd = find_cmd make_request *args
+          cmd = find_cmd make_request(*args)
           lines_from_command cmd
         end
 
@@ -57,7 +60,7 @@ module Hipe
           if (args.size==1 && args[0].kind_of?(Request))
             args[0]
           else
-            Request.make *args
+            Request.make(*args)
           end
         end
 
