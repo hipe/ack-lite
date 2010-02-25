@@ -1,108 +1,156 @@
 require 'open3'
 require 'json'
-require 'pp' # @todo
+require ENV['TM_SUPPORT_PATH'] + '/lib/escape.rb'    # e_sh
+require ENV['TM_SUPPORT_PATH'] + '/lib/osx/plist'    # to_plist
+require ENV['TM_BUNDLE_SUPPORT'] + '/external/ack-lite/ack-lite.rb'
+require ENV['TM_BUNDLE_SUPPORT'] + '/lib/view-controller.rb' # ViewController
+
 
 module Hipe
+
+  class Fail     < RuntimeError; end
+  class UserFail < Fail; end
+  class AppFail  < Fail; end
+
+  module TmBundley
+    MyNibRe = /^(\d+) \(Ack Lite\)$/
+    def my_loaded_nib_tokens
+      str = %x{$DIALOG nib --list}
+      str.scan(MyNibRe).map{|m| m[0]}
+    end
+    def my_first_loaded_nib_token
+      my_loaded_nibs.first
+    end
+    def dispose_all_nibs
+      my_loaded_nib_tokens.each do |token|
+        dispose_nib_window token
+      end
+    end
+    def dispose_nib_window token
+      dispose_cmd = %|$DIALOG nib --dispose #{token}|
+      %x{#{dispose_cmd}} # returns empty string
+    end
+    def plist_decode xml
+      OSX::PropertyList::load xml
+    end
+  end
+
+  module Backtix
+    # like using the backtix operator but reads from stdout
+    # and stderr.  you can either get the strings back as an array,
+    # or it can throw when returns the strings
+    # in stdout and stderr
+
+    def backtix2 cmd
+      stdin, stdout, stderr = Open3.popen3(cmd)
+      out = stdout.read
+      err = stderr.read
+      return [out, err]
+    end
+
+    # this is not always a replacement for running things with backtics!
+    # maybe b/c it blocks until EOF?
+    def backtix cmd
+      out, err = backtix2 cmd
+      err.strip!
+      if 0 != err.length
+        raise Hipe::AppFail.new("failed to run system command -- #{err}")
+      end
+      out
+    end
+  end
+
+  # i don't infect core classes
+  module Hashey
+    def hash_slice h, *keys, &block
+      h.each{|k,v| keys << k if block.call(key,val) } if block
+      ret = {}
+      keys.each{|k| ret[k] = h[k]}
+      ret
+    end
+  end
+
   module AckLite
 
-    class Fail < RuntimeError; end
-    class UserFail < Fail; end
-    class AppFail < Fail; end
-
     class TmBundle
-      # for now, the catch-all controller
+
+      include Hashey, Backtix, TmBundley
+
+      include ViewController::ClassMethods # h(), hpp() (html pretty print)
 
       def self.singleton
         @singleton ||= TmBundle.new
       end
 
+      def initialize
+        @view_controller = ViewController.new
+      end
+
       def present_search
         rescue_user_fail do
-          require ENV['TM_SUPPORT_PATH'] + '/lib/escape.rb'    # e_sh
-          require ENV['TM_SUPPORT_PATH'] + '/lib/osx/plist'
-          require ENV['TM_SUPPORT_PATH'] + '/lib/tm/detach.rb'
-          require ENV['TM_BUNDLE_SUPPORT'] + '/external/ack-lite/ack-lite.rb'
           model = build_model
           e_model = e_sh model.to_plist
-          if (false && token = my_first_loaded_nib_token)
-            puts "trying to load existing nib: #{token}"
-            cmd = "$DIALOG nib --update #{token} --model #{e_model}"
-            result = %x{#{cmd}}
-            puts 'my response: '<<mypp(result); # is empty str
-          else
+
+          #if (false && token = my_first_loaded_nib_token)
+          #  puts "trying to load existing nib: #{token}"
+          #  cmd = "$DIALOG nib --update #{token} --model #{e_model}"
+          #  result = %x{#{cmd}}
+          #  puts 'my response: '<<hpp(result); # is empty str
+
+          begin # was 'else'
             load_cmd = %{$DIALOG nib --load SearchPrompt } <<
                   %{ --center --model #{e_model}}
             @token = %x{#{load_cmd}}
           end
           wait_cmd = %{$DIALOG nib --wait #{@token}}
           response = %x{#{wait_cmd}}
-          process_search_request response
+          process_user_search_request response
         end
       end
 
-
-
-
-      # "protected" (left public for possible tests)
-
-      def rescue_user_fail
-        begin
-          yield
-        rescue UserFail => e
-          resp = %x{$DIALOG alert --alertStyle notice \
-            --title 'Ack Lite Notice' --body #{e_sh e.message}  \
-            --button1 OK
-          }
-          info = plist_decode resp
-          # puts mypp info   {'buttonClicked'=>0}
-          dispose_all # this actually works! yay
+      def process_user_search_request request
+        plist = plist_decode request
+        if plist['eventInfo'] && 'closeWindow' == plist['eventInfo']['type']
+          process_search_cancelled
+        elsif (plist['eventInfo'] &&
+          'searchButtonPressed' == plist['eventInfo']['returnArgument']
+        )
+          request = prepare_my_search_request plist
+          execute_and_render_search_and_save_model request, plist
+        else
+          raise Hipe::AppFail.new("missing or strange eventInfo: "<<
+            plist['eventInfo'].inspect
+          )
         end
       end
 
-      MyNibRe = /^(\d+) \(Ack Lite\)$/
-      def my_loaded_nib_tokens
-        str = %x{$DIALOG nib --list}
-        str.scan(MyNibRe).map{|m| m[0]}
+      def prepare_my_search_request plist
+        file_pats = plist['model']['files'].map{|x|x['pattern']}
+        dir_pats  = plist['model']['dirs'].map{|x|x['pattern']}
+        re_str    = plist['model']['searchRegexp']
+        opt_argv  = []
+        opt_argv << '-i' if plist['model']['ignoreCase']
+        paths_arg = file_or_dir_paths
+        request = Hipe::AckLite::Request.make(
+          dir_pats, file_pats, paths_arg, re_str, opt_argv
+        )
+        request
       end
 
-      def my_first_loaded_nib_token
-        my_loaded_nibs.first
+      def execute_and_render_search_and_save_model request, plist
+        response = Hipe::AckLite::Service.search request
+        puts "PLIST:"
+        puts hpp(plist)
+        puts "SEARCH RESPONSE:"
+        puts hpp(response)
+        # it didn't throw so we save it
+        write_model(plist['model']) if plist['model']
+        puts "done."
       end
 
-      def dispose_all
-        my_loaded_nib_tokens.each do |token|
-          dispose token
-        end
-      end
-
-      def dispose token
-        dispose_cmd = %|$DIALOG nib --dispose #{token}|
-        %x{#{dispose_cmd}} # empty string
-      end
-
-      def backtix2 cmd
-        stdin, stdout, stderr = Open3.popen3(cmd)
-        out = stdout.read
-        err = stderr.read
-        return [out, err]
-      end
-
-      # this is not a replacement for running things with backtics!
-      # maybe b/c it blocks until EOF?
-      def backtix cmd
-        out, err = backtix2 cmd
-        err.strip!
-        if 0 != err.length
-          raise AppFail.new("failed to run system command -- #{err}")
-        end
-        out
-      end
-
-      def hash_slice h, *keys, &block
-        h.each{|k,v| keys << k if block.call(key,val) } if block
-        ret = {}
-        keys.each{|k| ret[k] = h[k]}
-        ret
+      def process_search_cancelled
+        puts @view_controller.render :close_preview_window
+        dispose_nib_window @token
       end
 
       def build_model
@@ -135,88 +183,43 @@ module Hipe
         result
       end
 
-      # @todo find better debugging
-      def mypp mixed
-        h = '<pre>'
-        PP.pp(mixed,s='')
-        h << self.h(s)
-        h << '</pre>'
-        h
+      def write_model plist_ruby
+        copy = plist_ruby.dup
+        copy.delete('searchButtonKey')
+        copy.delete('note')
+        encoded = copy.to_json
+        defaults_cmd = <<-HERE.gsub(/(?:\n|^          )/,' ')
+          defaults write com.macromates.textmate
+          ackLiteData -string #{e_sh encoded}
+        HERE
+        backtix defaults_cmd
+        nil
       end
 
-      def process_search_request request
-        plist = plist_decode request
-        if plist['eventInfo'] && 'closeWindow' == plist['eventInfo']['type']
-          dispose @token
-          return
-        elsif (plist['eventInfo'] &&
-          'searchButtonPressed' == plist['eventInfo']['returnArgument']
-        )
-          request = prepare_search_request plist
-          render_search_and_save_model request, plist
-        else
-          raise AppFail.new("missing or strange eventInfo: "<<
-            plist['eventInfo'].inspect
-          )
+      # do whatever and catch any UserFail exceptions, display them
+      # in an alert, and clean up our windows.
+      def rescue_user_fail
+        begin
+          yield
+        rescue UserFail => e
+          resp = %x{$DIALOG alert --alertStyle notice \
+            --title 'Ack Lite Notice' --body #{e_sh e.message}  \
+            --button1 OK
+          }
+          info = plist_decode resp
+          # puts hpp info   {'buttonClicked'=>0}
+          dispose_all_nibs # this actually works! yay
+          # hoping we don't have html rendered already..
+          puts @view_controller.render :close_preview_window
         end
       end
 
-      def prepare_search_request plist
-        file_pats = plist['model']['files'].map{|x|x['pattern']}
-        dir_pats  = plist['model']['dirs'].map{|x|x['pattern']}
-        re_str    = plist['model']['searchRegexp']
-        opt_argv  = []
-        opt_argv << '-i' if plist['model']['ignoreCase']
-        paths_arg = file_or_dir_paths
-        request = Hipe::AckLite::Request.make(
-          dir_pats, file_pats, paths_arg, re_str, opt_argv
-        )
-        request
-      end
 
+      # **** refactor start ******
+      # @todo refactor to use Textmate module for this kind of thing instead
 
-      # encoders/decoders
-
-      def h(*args)
-        CGI.escapeHTML(*args)
-      end
-
-      def plist_decode xml
-        OSX::PropertyList::load xml
-      end
-
-      # @todo find better debugging
-      def mypp mixed
-        h = '<pre>'
-        PP.pp(mixed,s='')
-        h << self.h(s)
-        h << '</pre>'
-        h
-      end
-
-      def render_search_and_save_model request, plist
-        response = Hipe::AckLite::Service.search request
-        puts "PLIST:"
-        puts mypp(plist)
-        puts "SEARCH RESPONSE:"
-        puts mypp(response)
-        # it didn't throw so we save it
-        write_model(plist['model']) if plist['model']
-        puts "done."
-      end
-
-      # Below, the 'selected' files refer to the zero or more files that have
-      # been selected in the project drawer (multiple by holding butterfly
-      # key) (It is required that the user is in a project (folder) for this.)
-      # The 'active' file is the file in the buffer that is being edited.
-      # (if multiple files are open, it is the top one.)
-      # (It is not necessarily written to disk.)
-      # Because bundles don't work unless there is one active (not nec.
-      # selected) file, TM_FILEPATH is nil IFF the active file is only in the
-      # buffer, not on disk.  This should result in a message to the user.
-      # There are selected files iff user is in a project.  If she has
-      # zero or one selected file, assume she intends to search the project,
-      # else search only the selected files
+      # if the user has more than one file/folder selected in the project
+      # drawer, assume she wants to search in only those files/folders
       def file_or_dir_paths
         env = hash_slice(ENV,
           'TM_DIRECTORY' , # the directory the active file
@@ -254,28 +257,21 @@ module Hipe
         '
       >x
       Re2 = Regexp.new("\\A#{Re1}(?: #{Re1})*\\Z")
+      # @todo this needs to go away in favor of Textmate module
       def difficult_parse str
         if md = Re2.match(str)
           matches = str.scan(Re1)
           matches.map!{|x| x[0].gsub("'\\''","'")  }
           matches
         else
-          raise AppFail.new("failed to match selected files string: #{str}")
+          raise Hipe::AppFail.new(
+            "failed to match selected files string: #{str}"
+          )
         end
       end
 
-      def write_model plist_ruby
-        copy = plist_ruby.dup
-        copy.delete('searchButtonKey')
-        copy.delete('note')
-        encoded = copy.to_json
-        defaults_cmd = <<-HERE.gsub(/(?:\n|^          )/,' ')
-          defaults write com.macromates.textmate
-          ackLiteData -string #{e_sh encoded}
-        HERE
-        backtix defaults_cmd
-        nil
-      end
+      # ****** refactor end **********
+
     end
   end
 end

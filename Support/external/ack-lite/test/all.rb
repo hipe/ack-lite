@@ -1,15 +1,20 @@
 require 'minitest/autorun'  # unit and spec
 require 'ruby-debug'
-_Root = File.expand_path(File.dirname(__FILE__)+'/..')
-require File.join(_Root,'/ack-lite')
 
 class HipeAckliteSpec < MiniTest::Spec
+  GemRoot = File.expand_path(File.dirname(__FILE__)+'/..')
   def self.skipit msg, &b
     puts "skipping: #{msg}"
   end
 end
 
+require HipeAckliteSpec::GemRoot + '/ack-lite'
+
 describe Hipe::AckLite do
+
+  def setup_chdir
+    FileUtils.chdir(self.class::GemRoot)
+  end
 
   def thing
     @thing ||= begin
@@ -42,6 +47,7 @@ describe Hipe::AckLite do
   end
 
   it "should return list of files" do
+    setup_chdir
     request = Hipe::AckLite::Request.new(
       [],
       ['*.def'],
@@ -59,6 +65,7 @@ describe Hipe::AckLite do
   end
 
   it "should work" do
+    setup_chdir
     response = Hipe::AckLite::Service.search(
       ['skip-me'],
       ['*.def'],
@@ -71,14 +78,12 @@ describe Hipe::AckLite do
       "./test/data/uvw.def:1:foo-bar"
     ])
     have = Set.new(response.list)
-    debugger
-    'x'
-
     f1 = ((have.subset? tgt).must_equal true)
     f2 = ((tgt.subset? have).must_equal true)
   end
 
   it "should do case sensitive" do
+    setup_chdir
     results = Hipe::AckLite::Service.search(
       ['skip-me'],[],['./test/data'],'abc',[]
     )
@@ -86,6 +91,7 @@ describe Hipe::AckLite do
   end
 
   it "should do case insensitive" do
+    setup_chdir
     results = Hipe::AckLite::Service.search(
       ['skip-me'],[],['./test/data'],'abc',['-i']
     )
@@ -93,6 +99,7 @@ describe Hipe::AckLite do
   end
 
   it "should throw on bad options passed to grep" do
+    setup_chdir
     e  = proc do
       Hipe::AckLite::Service.search(
         ['skip-me'],[],['./test/data'],'abc',['-j']
