@@ -15,9 +15,14 @@ module Hipe
       :file_include_patterns,
       :search_paths,
       :regexp_string,
-      :grep_opts_argv
+      :grep_opts_argv,
+      :shell_command  # experimental - for internal use and user feedback
     )
-      def self.make *args
+      private
+      def initialize(*args); super end
+
+      public
+      def self.build *args
         if (args.size == 1 && args[0].kind_of?(Hash))
           req = self.new
           args[0].each do |pair|
@@ -33,35 +38,86 @@ module Hipe
     class SearchResponse < Struct.new(:command, :list); end
 
     module Service
+
+      # the values below must be either 'true' or string, the former
+      # only for switches that don't take arguments, the latter for the latter
+      DefaultGrepOpts = {
+        '--line-number'      => true,
+        '--extended-regexp'  => true,
+        '--binary-files'     => 'without-match',
+        '--with-filename'    => true
+      }
+      GrepShortToLong = {
+        '-n' => '--line-number',
+        '-E' => '--extended-regexp',
+        '-I' => '--binary-files', # careful! hack!
+        '-H' => '--with-filename'
+      }
+
       class << self
 
-        def search *args
-          request = make_request(*args)
-          if request.kind_of? Hash
-            request = Request.make request
+        #
+        # if block given, as each result string is produced,
+        # block will be called with two arguments: the string and the result
+        # object at that point.
+        # @return SearchResponse
+        #
+        def search *args, &block
+          request = build_request(*args)
+          cmd = request.shell_command
+          if block_given?
+            each_line cmd, block
+          else
+            resp = SearchResponse.new
+            resp.list = lines_from_command cmd
+            resp.command = cmd
+            resp
           end
-          cmd = self.find_cmd_head request
-          opts = request.grep_opts_argv * ' '
-          cmd << " -exec grep --line-number -E -I --with-filename #{opts} "<<
-                  " #{request.regexp_string}  \{\} ';'"
-          resp = SearchResponse.new
-          resp.list = lines_from_command cmd
-          resp.command = cmd
-          resp
         end
 
         def files *args
-          cmd = find_cmd_head make_request(*args)
+          cmd = find_cmd_head build_request(*args)
           lines_from_command cmd
         end
 
-        # "private"
-        def make_request(*args)
+        def build_request(*args)
+          request = nil
           if (args.size==1 && args[0].kind_of?(Request))
-            args[0]
+            request = args[0]
           else
-            Request.make(*args)
+            request = Request.build(*args)
           end
+          unless request.shell_command
+            cmd = find_cmd_head request
+            opts = render_grep_opts request
+            cmd << " -exec grep #{opts} "<<
+                    " #{request.regexp_string}  \{\} ';'"
+            request.shell_command = cmd
+          end
+          request
+        end
+
+
+
+        # "private" *******
+
+
+        def render_grep_opts request
+          use_opts = DefaultGrepOpts.dup
+          # this kind of sucks - it's like a mini-optparse hack
+          _keys = request.grep_opts_argv.select{|str| /^-/ =~ str }
+          keys = Hash[* _keys.zip(Array.new(_keys.length, true)).flatten ]
+          use_opts.reject!{ |k,v| keys[k] || keys[GrepShortToLong[k]] }
+          opts = ''
+          use_opts.each do |pair|
+            if true==pair[1]
+              opts << "#{pair[0]} "
+            else
+              opts << "#{pair[0]}=#{pair[1]} "
+            end
+          end
+          opts << (request.grep_opts_argv * ' ')
+          opts
         end
 
         # from Textmate:
@@ -96,14 +152,31 @@ module Hipe
           cmd
         end
 
-        def lines_from_command cmd
-          stdin, stdout, stderr = Open3.popen3(cmd)
-          out = stdout.read
+        def each_line cmd, block
+          result = nil
+          Open3.popen3(cmd) do |stdin, stdout, stderr|
+            result = SearchResponse.new(cmd, [])
+            stdout.each do |line|
+              result.list << line
+              block.call(line, result)
+            end
+            assert_no_errors stderr, cmd
+          end
+          result
+        end
+
+        def assert_no_errors stderr, cmd
           err = stderr.read
           err.strip!
           if (0 < err.length)
             raise Fail.new(err << "(from command:___#{cmd}___)")
           end
+        end
+
+        def lines_from_command cmd
+          stdin, stdout, stderr = Open3.popen3(cmd)
+          out = stdout.read
+          assert_no_errors stderr, cmd
           out.split("\n")
         end
       end

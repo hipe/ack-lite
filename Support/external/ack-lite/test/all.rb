@@ -18,7 +18,7 @@ describe Hipe::AckLite do
 
   def thing
     @thing ||= begin
-      Hipe::AckLite::Request.make(
+      Hipe::AckLite::Request.build(
         :file_include_patterns => ['.rb'],
         :directory_ignore_patterns => ['.git'],
         :search_paths => ['.'],
@@ -34,21 +34,34 @@ describe Hipe::AckLite do
 
   it "should fail with bad first level args" do
     proc do
-      Hipe::AckLite::Request.make(:blah=>'blah')
+      Hipe::AckLite::Request.build(:blah=>'blah')
     end.must_raise(NoMethodError)
   end
 
   it "should make request with flat args" do
-    request = Hipe::AckLite::Request.make(['.git'], ['.rb'],
+    request = Hipe::AckLite::Request.build(['.git'], ['.rb'],
       ['.'], 'foo', ['-i']
     )
     request.wont_be_nil
     request.must_equal thing
   end
 
+  it "should produce a valid shell command when you build the request" do
+    request = Hipe::AckLite::Service.build_request(
+      ['.git'], ['.rb'], ['.'], 'foo', ['-i']
+    )
+    # careful - fragile as all gitup.  leave no trailing spaces
+    shell_cmd = <<-'SHELL_CMD'.gsub(/\n      /m,'').strip
+      find -L .  -not \( -type d \( -name .git \) -prune  \) -a \( -name ".rb"
+       \) -exec grep --extended-regexp --binary-files=without-match
+      --line-number --with-filename -i  foo  {} ';'
+    SHELL_CMD
+    request.shell_command.must_equal shell_cmd
+  end
+
   it "should return list of files" do
     setup_chdir
-    request = Hipe::AckLite::Request.new(
+    request = Hipe::AckLite::Request.build(
       [],
       ['*.def'],
       ['./test/data']
