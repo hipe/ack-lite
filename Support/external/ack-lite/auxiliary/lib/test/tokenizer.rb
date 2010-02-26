@@ -18,7 +18,7 @@ module Hipe::Parsie
       t.pop.must_equal "foo"
       t.describe.must_match 'near "foo"'
       t.pop.must_equal nil
-      t.describe.must_match 'at end of input after "foo"'
+      t.describe.must_match 'at end of input near "foo"'
     end
     it "should also this" do
       t = StringLinesTokenizer.new("foo\nbar")
@@ -26,7 +26,7 @@ module Hipe::Parsie
       t.pop.must_equal "bar"
       t.describe.must_match 'near "bar"'
       t.pop.must_equal nil
-      t.describe.must_match 'at end of input after "bar"'
+      t.describe.must_match 'at end of input near "bar"'
     end
   end
 end

@@ -1,41 +1,45 @@
 require 'minitest/autorun'  # unit and spec
 require 'ruby-debug'
+root = File.expand_path('..',File.dirname(__FILE__))
+require "#{root}/parsie.rb"
 
-class SingleStringGrammarSpec < MiniTest::Spec
+class SingleRegexGrammarSpec < MiniTest::Spec
   TestRoot = File.expand_path('..',File.dirname(__FILE__))
   def self.skipit msg, &b; puts "skipping: #{msg}" end
 end
 
-require File.join(SingleStringGrammarSpec::TestRoot,'parsie')
-
 module Hipe::Parsie
-  describe "single string grammar" do
+  describe "single regex grammar" do
     before do
       Grammar.clearTables
       @g = Grammar.new('short grammar') do |g|
-        g.add "the string foo", "foo"
+        g.add "a thru z", /^[a-z]+$/
       end
     end
+
     it "should fail on the empty input" do
       tree = @g.parse!("")
       tree.must_equal nil
       pf = @g.parse_fail
       pf.kind_of?(ParseFail).must_equal true
       desc = pf.describe
-      desc.must_match(/\Aexpecting "foo" at end of input\Z/)
+      desc.must_match "expecting a thru z at end of input"
     end
+
     it "should fail on one wrong string" do
-      tree = @g.parse!("bar")
+      tree = @g.parse!("123")
       tree.must_equal nil
       pf = @g.parse_fail
       pf.kind_of?(ParseFail).must_equal true
       desc = pf.describe
-      desc.must_match  "expecting \"foo\" at end of input near \"bar\""
+      desc.must_match "expecting a thru z at end of input near \"123\""
     end
+
     it "should parse on one right string" do
       tree = @g.parse!("foo")
-      tree.kind_of?(StringParse).must_equal true
+      tree.kind_of?(RegexpParse).must_equal true
     end
+
     it "should fail when there's still more input" do
       tree = @g.parse!("foo\nbar")
       tree.must_equal nil

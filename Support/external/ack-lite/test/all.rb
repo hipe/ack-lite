@@ -9,6 +9,7 @@ class HipeAckliteSpec < MiniTest::Spec
 end
 
 require HipeAckliteSpec::GemRoot + '/ack-lite'
+require HipeAckliteSpec::GemRoot + '/auxilliary/test/all'
 
 describe Hipe::AckLite do
 

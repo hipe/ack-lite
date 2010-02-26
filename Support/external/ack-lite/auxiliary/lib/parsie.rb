@@ -28,7 +28,7 @@ module Hipe
           if @lines.length == 0
             "at end of input"
           else
-            "at end of input after "+@lines[@offset-1].inspect
+            "at end of input near "+@lines[@offset-1].inspect
           end
         else
           "near \""+@lines[@offset]+'"'
@@ -55,7 +55,6 @@ module Hipe
         end
       end
     end
-
 
     class ParseFail < Fail
       include UserFailey
@@ -161,7 +160,7 @@ module Hipe
       end
     end
 
-    module ParseCommon
+    module ParseStatusey
       def done?
         raise AppFail.new('no') if @done.nil?
         @done
@@ -188,7 +187,7 @@ module Hipe
     end
 
     class StringParse
-      include ParseCommon
+      include ParseStatusey
       def initialize string
         @string = string
         @done = false
@@ -208,8 +207,33 @@ module Hipe
     class RegexpSymbol
       include Symbolic
       attr_accessor :re
-      def initalize re; @re = re end
+      def initialize re; @re = re end
+      def table_done; end
+      def spawn
+        RegexpParse.new(@re, @name)
+      end
     end
+
+    class RegexpParse
+      include ParseStatusey
+      attr_accessor :matches
+      def initialize(re, name)
+        @re = re
+        @name = name
+        @done = false
+        @ok = false
+      end
+      def expecting
+        @done ? ['end of input'] : [@name]
+      end
+      def look str
+        md = @re.match(str)
+        @ok = ! md.nil?
+        @done = @ok
+        @matches = md.nil? ? nil : md.captures
+      end
+    end
+
 
     class UnionSymbol
       include Symbolic
