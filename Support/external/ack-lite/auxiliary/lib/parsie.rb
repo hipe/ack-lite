@@ -39,7 +39,7 @@ module Hipe
     class Cfg
       def parse! mixed
         tokenizer = build_tokenizer mixed
-        parse = @start_symbol.spawn
+        parse = @entries[@start_symbol_name].spawn
         while token = tokenizer.pop
           parse.look token
           break if parse.done?
@@ -54,6 +54,7 @@ module Hipe
           parse
         end
       end
+
     end
 
     class ParseFail < Fail
@@ -89,18 +90,21 @@ module Hipe
 
       def add name, mixed
         parser = make_parser mixed
-        if @entries.has_key? name
-          if @entries[name].kind_of? Union
-            union = @entries[name]
-          else
-            union = Union.new(@entries[name])
-          end
-          union.add parser
-        end
         parser.name = name
         parser.table = @name
-        @start_symbol = parser if @entries.size == 0
-        @entries[name] = parser
+        @start_symbol_name = name if @entries.size == 0
+        if @entries.has_key? name
+          if @entries[name].kind_of? UnionSymbol
+            union = @entries[name]
+            union.add parser
+          else
+            union = UnionSymbol.new(@entries[name])
+            union.add parser
+            @entries[name] = union
+          end
+        else
+          @entries[name] = parser
+        end
       end
 
       def table_done
@@ -119,24 +123,6 @@ module Hipe
 
       def parse_fail
         @parse_fail
-      end
-
-      def parse! mixed
-        tokenizer = build_tokenizer mixed
-        parse = @start_symbol.spawn
-        while token = tokenizer.pop
-          parse.look token
-          break if parse.done?
-        end
-        if ! parse.ok?
-          @parse_fail = ParseFail.new(tokenizer, parse)
-          nil
-        elsif tokenizer.has_more_tokens?
-          @parse_fail = ParseFail.new(tokenizer, parse)
-          nil
-        else
-          parse
-        end
       end
 
       def build_tokenizer mixed
@@ -202,6 +188,7 @@ module Hipe
       def expecting
         @done ? ['end of input'] : [@string.inspect]
       end
+      def tree; self end
     end
 
     class RegexpSymbol
@@ -216,7 +203,7 @@ module Hipe
 
     class RegexpParse
       include ParseStatusey
-      attr_accessor :matches
+      attr_accessor :matches, :name
       def initialize(re, name)
         @re = re
         @name = name
@@ -232,11 +219,12 @@ module Hipe
         @done = @ok
         @matches = md.nil? ? nil : md.captures
       end
+      def tree; self end
     end
-
 
     class UnionSymbol
       include Symbolic
+      attr_accessor :children
       def initialize parse
         @name = parse.name
         @children = [parse]
@@ -247,6 +235,42 @@ module Hipe
         "#{child.name.inspect}") unless @name == child.name
         @children.push child
         nil
+      end
+      def table_done
+        @children.each{|child| child.table_done }
+      end
+      def spawn
+        UnionParse.new(self)
+      end
+    end
+
+    class UnionParse
+      def initialize union
+        @name = union.name
+        @children = union.children.map(&:spawn)
+      end
+      def ok?
+        @children.detect{|c| c.ok?}
+      end
+      def done?
+        return true if @done == true
+        @done = !! @children.detect{|c| c.done?}
+      end
+      def expecting
+        @children.map(&:expecting).flatten.uniq
+      end
+      def look token
+        @children.each_with_index do |child, idx|
+          next if child.done?
+          child.look token
+          if child.done? && child.ok? # first match wins
+            break;
+          end
+        end
+      end
+      def tree
+        winner = @children.detect{|x| x.done? && x.ok? }
+        winner ? winner.tree : nil
       end
     end
 

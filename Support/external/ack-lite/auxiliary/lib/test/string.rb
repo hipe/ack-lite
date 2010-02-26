@@ -1,12 +1,11 @@
 require 'minitest/autorun'  # unit and spec
 require 'ruby-debug'
+root = File.expand_path('..',File.dirname(__FILE__))
+require "#{root}/parsie.rb"
 
 class SingleStringGrammarSpec < MiniTest::Spec
-  TestRoot = File.expand_path('..',File.dirname(__FILE__))
   def self.skipit msg, &b; puts "skipping: #{msg}" end
 end
-
-require File.join(SingleStringGrammarSpec::TestRoot,'parsie')
 
 module Hipe::Parsie
   describe "single string grammar" do

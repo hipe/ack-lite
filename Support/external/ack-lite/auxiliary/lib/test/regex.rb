@@ -4,7 +4,6 @@ root = File.expand_path('..',File.dirname(__FILE__))
 require "#{root}/parsie.rb"
 
 class SingleRegexGrammarSpec < MiniTest::Spec
-  TestRoot = File.expand_path('..',File.dirname(__FILE__))
   def self.skipit msg, &b; puts "skipping: #{msg}" end
 end
 
