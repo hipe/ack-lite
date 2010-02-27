@@ -22,7 +22,7 @@ module Hipe::Parsie
       pf = @g.parse_fail
       pf.kind_of?(ParseFail).must_equal true
       desc = pf.describe
-      desc.must_match(
+      desc.must_equal(
         "expecting \"abc123\" or string or regexp and had no input")
     end
 
@@ -32,9 +32,8 @@ module Hipe::Parsie
       pf = @g.parse_fail
       pf.kind_of?(ParseFail).must_equal true
       desc = pf.describe
-      desc.must_match(
-        "expecting \"abc123\" or string or regexp at end of input "<<
-        "near \"123abc\""
+      desc.must_equal(
+        "expecting \"abc123\" or string or regexp near \"123abc\""
       )
     end
 

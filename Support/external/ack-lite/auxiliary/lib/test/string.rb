@@ -28,7 +28,7 @@ module Hipe::Parsie
       pf = @g.parse_fail
       pf.kind_of?(ParseFail).must_equal true
       desc = pf.describe
-      desc.must_match  "expecting \"foo\" at end of input near \"bar\""
+      desc.must_equal "expecting \"foo\" near \"bar\""
     end
     it "should parse on one right string" do
       tree = @g.parse!("foo")
@@ -39,7 +39,7 @@ module Hipe::Parsie
       tree.must_equal nil
       fail = @g.parse_fail
       fail.kind_of?(ParseFail).must_equal true
-      fail.describe.must_match "expecting end of input near \"foo\""
+      fail.describe.must_equal "expecting no more input near \"foo\""
     end
   end
 end

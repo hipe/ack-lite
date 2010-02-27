@@ -6,7 +6,7 @@ require "#{root}/test/helpers.rb"
 
 
 module Hipe::Parsie
-  describe "simplesque grammar" do
+  describe "concat basic - mimimalesque grammar" do
     extend Hipe::Skippy
     def page5
       Grammar.clear_tables!
@@ -26,23 +26,23 @@ module Hipe::Parsie
       g = Grammar.new('grammar for bnf') do |g|
         g.add :list, [:list, :digit]
         g.add :list, :digit
-        g.add :digit, /\A[0-9]+\Z/
+        g.add :digit, /\A([0-9]+)\Z/
       end
       target = <<-'HERE'.test_strip(6)
         list   ::=  list digit.
         list   ::=  digit.
-        digit  ::=  /\A[0-9]+\Z/.
+        digit  ::=  /\A([0-9]+)\Z/.
       HERE
       str = g.to_bnf
       str.must_equal target
     end
 
-    it "should do insp" do
+    it "should do inspct" do
       g = page5
       sym = g.symbol(:list)
       par = sym.spawn(ParseContext.new)
       target = /.*UnionParse.*ConcatParse.*ParseReference.*RegexpParse.*/m
-      str = par.insp
+      str = par.inspct
       str.must_match target
     end
 
@@ -52,11 +52,29 @@ module Hipe::Parsie
       pf = @page5.parse_fail
       pf.kind_of?(ParseFail).must_equal true
       desc = pf.describe
-      desc.must_match "expecting digit and had no input"
+      desc.must_equal "expecting digit and had no input"
+    end
+
+    it "should fail on invalid input of one token" do
+      tree = page5.parse!("abc")
+      tree.must_equal nil
+      pf = @page5.parse_fail
+      pf.kind_of?(ParseFail).must_equal true
+      desc = pf.describe
+      desc.must_equal "expecting digit near \"abc\""
+    end
+
+    it "should fail on invalid input of two tokens" do
+      tree = page5.parse!("abc\n123")
+      tree.must_equal nil
+      pf = @page5.parse_fail
+      pf.kind_of?(ParseFail).must_equal true
+      desc = pf.describe
+      desc.must_equal "expecting digit near \"abc\""
     end
   end
 
-  describe "short grammar" do
+  describe "concat basic - short grammar" do
     extend Hipe::Skippy
 
     def page43
@@ -68,20 +86,6 @@ module Hipe::Parsie
         g.add :digit, /\A[0-9]+\Z/
       end
       @page43
-    end
-
-    skipit "should not infinite loop on spawn" do
-      master_blaster = page43.entry(:list)
-      spawn = master_blaster.spawn(Context.new)
-    end
-
-    skipit "should fail on the empty input" do
-      tree = @page43.parse!("")
-      tree.must_equal nil
-      pf = @page43.parse_fail
-      pf.kind_of?(ParseFail).must_equal true
-      desc = pf.describe
-      puts desc
     end
   end
 end
