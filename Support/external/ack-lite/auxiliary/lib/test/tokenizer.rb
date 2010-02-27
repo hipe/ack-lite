@@ -13,7 +13,7 @@ module Hipe::Parsie
       t.describe.must_match "at beginning of input"
       t.pop.must_equal nil
       t.pop.must_equal nil
-      t.describe.must_match "at end of input"
+      t.describe.must_match "and had no input"
     end
     it "should also" do
       t = StringLinesTokenizer.new("foo")

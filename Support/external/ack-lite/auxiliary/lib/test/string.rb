@@ -20,7 +20,7 @@ module Hipe::Parsie
       pf = @g.parse_fail
       pf.kind_of?(ParseFail).must_equal true
       desc = pf.describe
-      desc.must_match(/\Aexpecting "foo" at end of input\Z/)
+      desc.must_match(/\Aexpecting "foo" and had no input\Z/)
     end
     it "should fail on one wrong string" do
       tree = @g.parse!("bar")

@@ -16,35 +16,34 @@ module Hipe::Parsie
       end
     end
 
-    skipit "should fail on the empty input" do
+    it "should fail on the empty input" do
       tree = @g.parse!("")
       tree.must_equal nil
       pf = @g.parse_fail
       pf.kind_of?(ParseFail).must_equal true
       desc = pf.describe
       desc.must_match(
-        "expecting \"abc123\" or string or regexp at end of input")
+        "expecting \"abc123\" or string or regexp and had no input")
     end
 
-    skipit "should fail on bad string" do
+    it "should fail on bad string" do
       tree = @g.parse!("123abc")
       tree.must_equal nil
       pf = @g.parse_fail
       pf.kind_of?(ParseFail).must_equal true
       desc = pf.describe
-      puts desc
       desc.must_match(
         "expecting \"abc123\" or string or regexp at end of input "<<
         "near \"123abc\""
       )
     end
 
-    skipit "should parse on one good string using string symbol" do
+    it "should parse on one good string using string symbol" do
       parse = @g.parse!("abc123")
       parse.tree.kind_of?(StringParse).must_equal true
     end
 
-    skipit "should parse on one good string using regex symbol" do
+    it "should parse on one good string using regex symbol" do
       parse = @g.parse!("abc124")
       parse.tree.kind_of?(RegexpParse).must_equal true
     end

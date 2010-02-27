@@ -21,6 +21,7 @@ module Hipe
 
     class ParseFail < Fail
       # half the reason parsers exist is to do a good job of reporting these
+      # then there's this
 
       include UserFailey # not sure about this
 
@@ -29,7 +30,7 @@ module Hipe
         @parse = parse
       end
       def describe
-        ex = @parse.expecting
+        ex = @parse.expecting.uniq
         prepositional_phrase = @tokenizer.describe
         "expecting #{ex.join(' or ')} #{prepositional_phrase}"
       end
@@ -61,7 +62,7 @@ module Hipe
           "at beginning of input"
         elsif @offset > @last_offset
           if @lines.length == 0
-            "at end of input"
+            "and had no input"
           else
             "at end of input near "+@lines[@offset-1].inspect
           end
@@ -136,15 +137,29 @@ module Hipe
       class << self
         attr_reader :all
       end
-      attr_reader :context_id, :token_frame_production_parsers
+
+      def token_frame_production_parsers
+        @token_locks[:token_frame_production_parsers]
+      end
+
+      def visiting name
+        case name
+        when :ok? :       @token_locks[:ok?]
+        when :expecting : @token_locks[:expecting]
+        end
+      end
+
       alias_method :tfpp, :token_frame_production_parsers
+      attr_reader :context_id
       def initialize
         @context_id = self.class.all.register(self)
-        @token_frame_production_parsers = Setesque.new
+        @token_locks = Hash.new do |h,k|
+          h[k] = Setesque.new(k)
+        end
         $tf = @token_frame
       end
       def new_token
-        @token_frame_production_parsers.clear
+        @token_locks.each{|p| p[1].clear }
       end
     end
 
@@ -214,6 +229,7 @@ module Hipe
         while token = tokenizer.pop
           ctxt.new_token
           parse.look token
+          # @todo push back on the stack for partial matches
           break if parse.done?
         end
         if ! parse.ok?
@@ -438,19 +454,55 @@ module Hipe
         attr_accessor :all
       end
       @all = RegistryList.new
-      def initialize p
+      def initialize ctxt, production_id
+        p = ctxt.tfpp[production_id]
         @ref_id = self.class.all.register(self)
         @p = p
+        @c = ctxt
       end
-      def insp ctx, o=nil
+      def insp ctx=InspectContext.new, o=nil
         sprintf("#<%s: #%s :%s>",class_bn,@ref_id, @p.insp(ctx,:word=>1))
       end
+
+      # not sure about this
+      # do we want to resolve it somehow?
+      def ok?
+        _safe :ok?
+      end
+
+      def expecting
+        set = @c.visiting(:expecting)
+        if set.has? @p.parse_id
+          [] # not sure about this
+        else
+          set.register @p.parse_id, nil
+          rslt = @p.expecting # might be nil!?
+          # not sure about this
+          rslt
+        end
+      end
+
+      def _safe meth
+        set = @c.visiting(meth)
+        if set.has? @p.parse_id
+          rslt = set[@p.parse_id]
+          rslt
+        else
+          set.register(@p.parse_id, nil)
+          rslt = @p.send(pmeth) # might be nil!?
+          r2 = set.remove(@p.parse_id)
+          raise No.new('no') unless rslt.nil?
+          set.register(@p.parse_id, rslt)
+          rslt
+        end
+      end
+
     end
 
     module SymbolAggregatey
       def _spawn ctxt, claz
         if ctxt.tfpp.has? production_id
-          ParseReference.new ctxt.tfpp[production_id]
+          ParseReference.new ctxt, production_id
         else
           p = claz.new(self, ctxt) # note2
           ctxt.tfpp.register(production_id, p)
@@ -537,6 +589,7 @@ module Hipe
         @context_id = ctxt.context_id
         @union_symbol = union
         @ctxt = ctxt
+        @done = false
       end
       def resolve_children
         _resolve_children @union_symbol, @ctxt
@@ -562,6 +615,27 @@ module Hipe
         end
         m
       end
+      def look tokers
+        raise No.new('no') if @done
+        # num_still_looking = 0
+        # num_ok = 0
+        @children.each_with_index do |child,i|
+          next if child.done?
+          child.look tokers
+          if child.done? && child.ok? # @todo first clean match wins
+            break;
+          end
+        end
+      end
+      def done?
+        return true if @done == true
+        @done = !! @children.detect{|c| c.done?}
+      end
+      def tree
+        winner = @children.detect{|x| x.done? && x.ok? }
+        winner ? winner.tree : nil
+      end
+
       def insp ctx=InspectContext.new, opts={}
         _insp ctx, opts
       end
@@ -581,12 +655,6 @@ module Hipe
       end
       def spawn ctxt
         _spawn ctxt, ConcatParse
-      end
-      def insp ctxt=InspectContext.new, opts=nil
-
-        debugger
-        'x'
-        'fooobric'
       end
       def reference_check
         missing = []
@@ -613,19 +681,27 @@ module Hipe
         @offset = 0
         @concat_symbol = symbol
         @ctxt = ctxt
+        @done_not_ok = nil
       end
 
       def resolve_children
         _resolve_children @concat_symbol, @ctxt
         remove_instance_variable '@concat_symbol'
         remove_instance_variable '@ctxt'
+        @last = @children.length - 1
       end
 
       def insp ctx=InspectContext.new, opts={}; _insp ctx,opts end
 
       def ok?
-        debugger
-        'x'
+        return false if @done_not_ok
+        rs = @offset == @last # @todo this won't fly when there are trailing zero-width
+        rs
+      end
+
+      def expecting
+        rs = @children[@offset].expecting
+        rs
       end
     end
   end

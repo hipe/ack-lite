@@ -21,7 +21,7 @@ module Hipe::Parsie
       pf = @g.parse_fail
       pf.kind_of?(ParseFail).must_equal true
       desc = pf.describe
-      desc.must_match "expecting a thru z at end of input"
+      desc.must_match "expecting a thru z and had no input"
     end
 
     it "should fail on one wrong string" do

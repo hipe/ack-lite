@@ -46,13 +46,13 @@ module Hipe::Parsie
       str.must_match target
     end
 
-    skipit "should fail on the empty input" do
+    it "should fail on the empty input" do
       tree = page5.parse!("")
       tree.must_equal nil
       pf = @page5.parse_fail
       pf.kind_of?(ParseFail).must_equal true
       desc = pf.describe
-      puts desc
+      desc.must_match "expecting digit and had no input"
     end
   end
 
