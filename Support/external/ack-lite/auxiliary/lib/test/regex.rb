@@ -2,15 +2,14 @@ require 'minitest/autorun'  # unit and spec
 require 'ruby-debug'
 root = File.expand_path('..',File.dirname(__FILE__))
 require "#{root}/parsie.rb"
+require "#{root}/test/helpers.rb"
 
-class SingleRegexGrammarSpec < MiniTest::Spec
-  def self.skipit msg, &b; puts "skipping: #{msg}" end
-end
 
 module Hipe::Parsie
   describe "single regex grammar" do
+    extend Hipe::Skippy
     before do
-      Grammar.clearTables
+      Grammar.clear_tables!
       @g = Grammar.new('short grammar') do |g|
         g.add "a thru z", /^[a-z]+$/
       end

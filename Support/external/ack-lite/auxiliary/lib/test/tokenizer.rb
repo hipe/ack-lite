@@ -1,11 +1,13 @@
 require 'minitest/autorun'  # unit and spec
 require 'ruby-debug'
-
 root = File.expand_path('..',File.dirname(__FILE__))
-require File.join(root,'parsie')
+require "#{root}/parsie.rb"
+require "#{root}/test/helpers.rb"
+
 
 module Hipe::Parsie
   describe "tokenizer" do
+    extend Hipe::Skippy
     it "should" do
       t = StringLinesTokenizer.new("")
       t.describe.must_match "at beginning of input"
