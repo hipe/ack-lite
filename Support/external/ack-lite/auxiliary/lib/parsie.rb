@@ -589,9 +589,12 @@ module Hipe
       def to_bnf_rhs; @target.to_s end
     end
 
-    class ParsesRegistry < RegistryList; end
+    class ParsesRegistry < RegistryList
+      def insp; @children.each{|x| x.insp}; nil end # outputs to $stdout
+    end
 
     Parses = ParsesRegistry.new
+    $p = Parses # shh
 
     class ParseReference
       include Misc
@@ -740,6 +743,7 @@ module Hipe
         @ok = nil
         idx_ok   = []
         idx_done = []
+        skipped_over = []
         @in_the_running.each do |idx|
           child = @children[idx]
           looking = catch(:look_is_wip) do
@@ -750,7 +754,9 @@ module Hipe
             if looking[:pid] != @parse_id
               raise No.new("big problems - caught the wrong look wip")
             else # see note5 !!!
-              idx_done << idx
+              puts "#{inspct_tiny} skipping over #{token}"
+              skipped_over << idx
+              idx_done     << idx
               next
             end
           end
@@ -759,16 +765,29 @@ module Hipe
           idx_ok   << idx if c_ok
           idx_done << idx if c_done
         end
-        done_and_ok_this_round = idx_done & idx_ok
+        # done_and_ok_this_round = idx_done & idx_ok
+        @have_looked = true
         @in_the_running -= idx_done
         @done = @in_the_running.size == 0
         @ok   = idx_ok.size > 0
+        look_unlock
+
+        # start experimental
+        if skipped_over.length > 0
+          skipped_over.each do |idx|
+            child = @children[idx]
+            child.look_again
+            c_ok    = child.ok?
+            c_done  = child.done?
+            idx_ok   << idx if c_ok
+            idx_done << idx if c_done
+          end
+        end
+        # end experimental
+
         if (@prev_ok && !@ok)
           debugger; 'life of suck'
         end
-        # ambiguity_check if (@done && @ok) # done at tree time
-        @have_looked = true
-        look_unlock
         nil
       end
 
@@ -869,7 +888,11 @@ module Hipe
         @ctxt = ctxt
         @done = nil
         @ok = nil
-        @done_not_ok = nil
+        @last_token_seen = :none
+      end
+
+      def inspct_extra(ll,ctx,opts)
+        ll << sprintf("@last_token_seen=%s",@last_token_seen.inspect)
       end
 
       def resolve_children
@@ -881,22 +904,31 @@ module Hipe
       end
 
       def look token
+        @last_token_seen = token
         raise No.new("concat won't look when done") if @done
-        look_lock
         @done = nil
         @ok = nil
         curr = @children[@offset]
         @prev_ok = curr.ok?
-        if curr.done?
-          raise No.new("child should never be done here")
-        end
+        raise No.new("child should never be done here") if curr.done?
+        look_lock
         curr.look token
+        look_unlock
         if curr.done?
           curr.ok? ? advance_done_and_ok : advance_done_and_not_ok(token)
         else
           curr.ok? ? advance_not_done_and_ok : advance_not_done_and_not_ok
         end
-        look_unlock
+
+      end
+
+
+      def look_again
+        $p.insp
+        puts("exiting at #{__FILE__}#{__LINE__}")
+        exit
+        debugger
+        'x'
       end
 
       def advance_done_and_ok # our favorite state
@@ -934,13 +966,13 @@ module Hipe
 
       def ok?
         return @ok unless @ok.nil?
-        @ok = @offset >= @ok_index
+        @offset >= @ok_index
       end
 
       def done?
         # todo this returns lies at the beginning note4 (see test)
         return @done unless @done.nil?
-        @done = @offset >= @done_index
+        @offset >= @done_index
       end
 
       def expecting
