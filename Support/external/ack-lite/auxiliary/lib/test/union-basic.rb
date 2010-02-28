@@ -39,13 +39,15 @@ module Hipe::Parsie
 
     it "should parse on one good string using string symbol" do
       parse = @g.parse!("abc123")
-      parse.tree.kind_of?(StringParse).must_equal true
+      parse.tree.value.value.must_equal "abc123"
+      parse.tree.value.type.must_equal :string
+
     end
 
-    it "should parse on one good string using regex symbol" do
-      parse = @g.parse!("abc124")
-      parse.tree.kind_of?(RegexpParse).must_equal true
+    skipit "should parse on one good string using regex symbol" do
+      parse = @g.parse!("def789")
+      parse.tree.value.value.must_equal "def789"
+      parse.tree.value.type.must_equal :regexp
     end
-
   end
 end

@@ -471,17 +471,18 @@ module Hipe
 
     class StringProduction
       include Productive
+      attr_accessor :string_literal
       def initialize string
         raise ParseParseFail("no").new if
           (""==string || !string.kind_of?(String))
-        @string = string
+        @string_literal = string
         @done = false
         @ok = false
       end
       def spawn ctxt
-        StringParse.new(@string)
+        StringParse.new(self)
       end
-      def to_bnf_rhs; @string.inspect end
+      def to_bnf_rhs; @string_literal.inspect end
     end
 
     class RegexpProduction
@@ -489,7 +490,7 @@ module Hipe
       attr_accessor :re
       def initialize re; @re = re end
       def spawn ctxt
-        RegexpParse.new(@re, symbol_name)
+        RegexpParse.new(self)
       end
       # @todo not bnf!
       def to_bnf_rhs;
@@ -497,10 +498,14 @@ module Hipe
       end
     end
 
+    module Terminesque
+    end
+
     class StringParse
-      include ParseStatusey
-      def initialize string
-        @string = string
+      include ParseStatusey, Terminesque
+      def initialize prod
+        @string = prod.string_literal
+        @production_id = prod.production_id
         @done = false
         @ok = false
       end
@@ -514,18 +519,28 @@ module Hipe
       def expecting
         (@ok && @done) ? ['no more input'] : [@string.inspect]
       end
-      def tree; self end
       def inspct _,o=nil;
         inspect
+      end
+      def tree
+        return @value_tree unless @value_tree.nil?
+        @value_tree =
+          if (@done&&@ok)
+            ValueTreeNode.new(:string, nil, @production_id, @string)
+          else
+            false
+          end
+        @value_tree
       end
     end
 
     class RegexpParse
-      include ParseStatusey, Inspecty
+      include ParseStatusey, Inspecty, Terminesque
       attr_accessor :matches, :name
-      def initialize(re, name)
-        @re = re
-        @name = name
+      def initialize production
+        @re = production.re
+        @production_id = production.production_id
+        @name = production.symbol_name
         @done = false
         @ok = false
         @md = nil
@@ -540,9 +555,19 @@ module Hipe
         @md = md ? md : false
         @ok = !! md
       end
-      def tree; self end
       def inspct _,o=nil;
         inspect
+      end
+      def tree
+        return @vt unless @vt.nil?
+        @vt = begin
+          if ! @md then false
+          else
+            val = @md.captures.length > 0 ? @md.captures : @md[0]
+            ValueTreeNode.new(:regexp, @name, @production_id, val)
+          end
+        end
+        @vt
       end
     end
 
@@ -624,8 +649,9 @@ module Hipe
           hard_to_get = @p.done?
           dip = sett.remove(pid)
           if ! (:done_wipping == dip)
-            debugger; "whip no"
-            raise No.new('no - dip')
+            debugger;
+            "whip no"
+            # raise No.new('no - dip')
           else
             rslt = hard_to_get
           end
@@ -723,12 +749,7 @@ module Hipe
           if looking
             if looking[:pid] != @parse_id
               raise No.new("big problems - caught the wrong look wip")
-            else
-              # we just skip recusive looks !?
-              # puts "skipping recursive look for #{inspct_tiny}"
-              # the node that invokes us, self, is that forever
-              # out of the running !??
-              # we are forever out of the running if we are looking !?? @todo
+            else # see note5 !!!
               idx_done << idx
               next
             end
@@ -745,10 +766,13 @@ module Hipe
         if (@prev_ok && !@ok)
           debugger; 'life of suck'
         end
+        # ambiguity_check if (@done && @ok) # done at tree time
         @have_looked = true
         look_unlock
         nil
       end
+
+      def winners; @children.select{|x| x.done? && x.ok? } end
 
       def ok?
         # you are ok if one of your children is ok
@@ -769,14 +793,38 @@ module Hipe
       end
 
       def tree
-        # @todo ambiguities
-        winner = @children.detect{|x| x.done? && x.ok? }
-        winner ? winner.tree : nil
+        @vt ||= begin
+          winners = self.winners
+          if winners.size > 1
+            winner = disambiguate_or_raise winners
+            tree_from_winner winner
+          elsif winners.size == 0
+            false # or throw error?
+          else
+            tree_from_winner winners[0]
+          end
+        end
       end
 
       def inspct_extra(ll,ctx,opts)
         ll << sprintf("@in_the_running=%s",@in_the_running.inspect)
       end
+
+      def disambiguate_or_raise winners
+        one = winners.detect{|x| ! x.kind_of? Terminesque }
+        if one
+          raise No.new(
+          "ambiguous parse tree - more than one winner and they aren't all"<<
+          " terminal")
+        end
+        winners.shift
+      end
+
+      def tree_from_winner winner
+        my_val = winner.tree
+        ValueTreeNode.new(:union, @symbol_name, @production_id, my_val)
+      end
+
     end
 
     class ConcatProduction
@@ -900,9 +948,18 @@ module Hipe
         rs
       end
     end
+
+    class ValueTreeNode < Struct.new(
+      :type, :symbol_name, :production_id, :value
+    ); end
+
   end
 end
 # note1 - UnionSymbols are only ever created by the table, pipe operator not
 #  supported
 # note2 - see above
-# note3- this is our 'look again' algorithm
+# note3 - this is our 'look again' algorithm
+# note5 - @todo: we just skip recusive looks !?
+#   the node that invokes us, self, is that forever
+#   out of the running !??
+#   we are forever out of the running if we are looking !??

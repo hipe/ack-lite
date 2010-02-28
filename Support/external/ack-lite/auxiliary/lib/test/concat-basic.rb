@@ -46,32 +46,30 @@ module Hipe::Parsie
       str.must_match target
     end
 
-    it "should fail on the empty input" do
-      tree = page5.parse!("")
+    def fail_msg(parser, input)
+      tree = parser.parse!(input)
       tree.must_equal nil
-      pf = @page5.parse_fail
+      pf = parser.parse_fail
       pf.kind_of?(ParseFail).must_equal true
       desc = pf.describe
-      desc.must_equal "expecting digit and had no input"
+      desc
+    end
+
+    it "should fail on the empty input" do
+      msg = fail_msg(page5, "")
+      msg.must_equal "expecting digit and had no input"
     end
 
     it "should fail on invalid input of one token" do
-      tree = page5.parse!("abc")
-      tree.must_equal nil
-      pf = @page5.parse_fail
-      pf.kind_of?(ParseFail).must_equal true
-      desc = pf.describe
-      desc.must_equal "expecting digit near \"abc\""
+      msg = fail_msg(page5,"abc")
+      msg.must_equal "expecting digit near \"abc\""
     end
 
     it "should fail on invalid input of two tokens" do
-      tree = page5.parse!("abc\n123")
-      tree.must_equal nil
-      pf = @page5.parse_fail
-      pf.kind_of?(ParseFail).must_equal true
-      desc = pf.describe
-      desc.must_equal "expecting digit near \"abc\""
+      msg = fail_msg(page5,"abc")
+      msg.must_equal "expecting digit near \"abc\""
     end
+
   end
 
   describe "concat basic - short grammar" do
