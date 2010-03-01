@@ -7,7 +7,7 @@ require "#{root}/test/helpers.rb"
 
 module Hipe::Parsie
   describe "union basic" do
-    extend Hipe::Skippy
+    extend Hipe::MinitestExtraClassMethods
     before do
       Grammar.clear_tables!
       @g = Grammar.new('short grammar') do |g|
@@ -44,7 +44,7 @@ module Hipe::Parsie
 
     end
 
-    skipit "should parse on one good string using regex symbol" do
+    it "should parse on one good string using regex symbol" do
       parse = @g.parse!("def789")
       parse.tree.value.value.must_equal "def789"
       parse.tree.value.type.must_equal :regexp

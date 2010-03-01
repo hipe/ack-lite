@@ -7,7 +7,7 @@ require "#{root}/test/helpers.rb"
 
 module Hipe::Parsie
   describe "single string grammar" do
-    extend Hipe::Skippy
+    extend Hipe::MinitestExtraClassMethods
     before do
       Grammar.clear_tables!
       @g = Grammar.new('short grammar') do |g|

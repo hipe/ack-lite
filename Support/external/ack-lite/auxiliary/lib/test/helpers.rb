@@ -1,7 +1,12 @@
 module Hipe
-  module Skippy
+  module MinitestExtraClassMethods
     def skipit msg, &b; puts "skipping: #{msg}" end
     def skipbefore &b; end
+  end
+  module MinitestExtraInstanceMethods
+    def with it
+      yield it
+    end
   end
 end
 

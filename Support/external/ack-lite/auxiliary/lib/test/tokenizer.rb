@@ -7,7 +7,7 @@ require "#{root}/test/helpers.rb"
 
 module Hipe::Parsie
   describe "tokenizer" do
-    extend Hipe::Skippy
+    extend Hipe::MinitestExtraClassMethods
     it "should" do
       t = StringLinesTokenizer.new("")
       t.describe.must_match "at beginning of input"

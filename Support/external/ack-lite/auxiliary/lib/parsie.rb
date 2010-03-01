@@ -1,46 +1,10 @@
+root = File.dirname(__FILE__)
+require root+'/mixins.rb'
+require root+'/support.rb'
+
 module Hipe
 
   module Parsie
-
-    module UserFailey
-      # something the user did wrong in creating grammars, etc
-    end
-
-    class Fail < RuntimeError
-      # base class for all exceptions originating from this library
-    end
-
-    class AppFail < Fail
-      # we did something wrong internally in this library
-    end
-
-    class ParseParseFail < Fail
-      # something the user did wrong in construting a grammar
-      include UserFailey
-    end
-
-    class ParseFail < Fail
-      # half the reason parsers exist is to do a good job of reporting these
-      # then there's this
-
-      include UserFailey # not sure about this
-
-      attr_accessor :parse
-
-      def initialize tokenizer, parse
-        @tokenizer = tokenizer
-        @parse = parse
-      end
-
-      def describe
-        ex = @parse.expecting.uniq
-        prepositional_phrase = @tokenizer.describe
-        "expecting #{ex.join(' or ')} #{prepositional_phrase}"
-      end
-
-    end
-
-    No = AppFail # internal shorthand
 
     class StringLinesTokenizer
       # this might provide a guideline for an interface for tokenizers,
@@ -76,71 +40,6 @@ module Hipe
       end
     end
 
-    class RegistryList
-      include Enumerable # hm
-      def initialize; @children = [] end
-      def [] idx; @children[idx] end
-      def register obj
-        @children << obj
-        @children.length - 1
-      end
-      def each &b
-        @children.each(&b)
-      end
-    end
-
-    class Setesque
-      class Enumerator
-        include Enumerable
-        def initialize settie
-          @thing = settie
-        end
-        def each
-          @thing.each do |p|
-            obj = @thing.retrieve p[0]
-            yield [p[0], obj]
-          end
-        end
-      end
-      def initialize(name = 'set',&retrieve_block)
-        @name = name
-        @children = {}
-        @retrieve_block = retrieve_block
-        if @retrieve_block
-          md = /\A(.+)@(.+)\Z/.match(@retrieve_block.to_s)
-          me = "#{md[1]}@#{File.basename(md[2])}"
-          class << @retrieve_block; self end.send(:define_method,:inspect){me}
-        end
-      end
-      def [] key; @children[key] end
-      def retrieve key
-        @retrieve_block.call @children[key]
-      end
-      def objects
-        Enumerator.new self
-      end
-      def has? key; @children.has_key? key end
-      def register key, obj
-        raise No.new(%{won't redefine "#{key}" grammar}) if
-          @children.has_key? key
-        @children[key] = obj
-        nil
-      end
-      def replace key, obj
-        raise No.new(%{need a key to replace}) unless @children.has_key? key
-        old = @children[key]
-        @children[key] = obj
-        old
-      end
-      def remove key
-        raise No.new("no") unless @children.has_key? key
-        @children.delete(key)
-      end
-      def clear; @children.clear end
-      def size; @children.size end
-      def keys; @children.keys end
-
-    end
 
     class ParseContext
       @all = RegistryList.new
@@ -154,10 +53,10 @@ module Hipe
 
       def visiting name
         case name
-        when :look  :     @token_locks[:look]
-        when :ok? :       @token_locks[:ok?]
-        when :done? :     @token_locks[:done?]
-        when :expecting : @token_locks[:expecting]
+        when :look       ; @token_locks[:look]
+        when :ok?        ; @token_locks[:ok?]
+        when :done?      ; @token_locks[:done?]
+        when :expecting  ; @token_locks[:expecting]
         end
       end
 
@@ -170,33 +69,37 @@ module Hipe
         end
         $tf = @token_frame
       end
-      def new_token
+      def tic
         @token_locks.each{|p| p[1].clear }
       end
     end
 
-    class Cfg; end      # context-free grammar, also called a 'table' here
-    Grammar = Cfg       # external alias for readability
 
-    class Cfg
-      class Productions < RegistryList; end
-      class Symbols     < Setesque;  end
+    class ParsesRegistry      < RegistryList; end
+    class ProductionsRegistry < RegistryList; end
 
+    Parses = ParsesRegistry.new
+    Productions = ProductionsRegistry.new
+    $p = Parses # shh
+    $pr = Productions
+
+
+    class Cfg     # context-free grammar, also called a 'table' here
+      include NaySayer
       @all = Setesque.new
       class << self
         attr_reader :all
         def clear_tables!; @all.clear end
       end
 
-      attr_reader :table_name
-      attr_reader :symbols # just for concat to check its references
+      attr_reader :table_name, :productions, :symbols
 
       def initialize name, &block
         self.class.all.register(name, self)
         $g = self #shh
         @table_name        = name
-        p = @productions = Productions.new
-        @symbols = Symbols.new('symbols'){|id| p[id]}
+        @symbols = Setesque.new('symbols'){|id| Productions[id]}
+        @productions = []
         yield self
       end
 
@@ -209,10 +112,10 @@ module Hipe
       def add symbol_name, mixed
         @start_symbol_name = symbol_name if @symbols.size == 0
         prod = build_production mixed
+        add_prod prod
         prod.table_name = @table_name
         prod.symbol_name = symbol_name
-        prod_id = @productions.register prod
-        prod.production_id = prod_id
+        prod_id = prod.production_id
         if ! @symbols.has? symbol_name
           @symbols.register symbol_name, prod_id
         else
@@ -223,7 +126,8 @@ module Hipe
           else
             @symbols.remove(symbol_name)
             union = UnionSymbol.new(symbol_production)
-            prod_id2 = @productions.register union
+            prod_id2 = Productions.register union
+            add_prod union
             union.symbol_name = symbol_name
             union.production_id = prod_id2
             union.table_name = @table_name
@@ -234,12 +138,20 @@ module Hipe
         nil
       end
 
+      def add_prod prod
+        unless prod.kind_of? Productive
+          $prod = prod
+          no('wtf u tried to add $prod as a production')
+        end
+        @productions << prod
+      end
+
       def parse! mixed
         ctxt = ParseContext.new
         tokenizer = build_tokenizer mixed
         parse = symbol(@start_symbol_name).spawn(ctxt)
         while token = tokenizer.pop
-          ctxt.new_token
+          ctxt.tic
           parse.look token
           # @todo push back on the stack for partial matches
           break if parse.done?
@@ -257,7 +169,7 @@ module Hipe
 
       def reference_check
         missing = []
-        @productions.each do |prod|
+        productions.each do |prod|
           err = catch(:ref_fail) do
             prod.reference_check if prod.respond_to? :reference_check
             nil
@@ -283,22 +195,26 @@ module Hipe
             raise ParseParseFail.new("can't use #{x.class.inspect} here")
           end
         end
+
+        prod =
         case mixed
-          when Regexp: RegexpProduction.new(mixed)
-          when Symbol: SymbolReference.new(mixed)
-          when Array:  ConcatProduction.new(self, mixed)
-          when String: StringProduction.new(mixed)
+          when Regexp; RegexpProduction.new(mixed)
+          when Symbol; SymbolReference.new(mixed)
+          when Array;  ConcatProduction.new(self, mixed)
+          when String; StringProduction.new(mixed)
           else raise ParseParseFail.new("no: #{mixed.inspect}")
         end
+        prod.production_id = Productions.register(prod)
+        prod
       end
 
-      def parse_fail
+      def parse_fail;
         @parse_fail
       end
 
       def build_tokenizer mixed
         case mixed
-        when String: StringLinesTokenizer.new(mixed)
+        when String; StringLinesTokenizer.new(mixed)
         else raise ParseParseFail.new("no: #{mixed.inspect}")
         end
       end
@@ -308,13 +224,13 @@ module Hipe
         show_pids = opts[:pids]
         prerendered = []
         left_max = 0
-        fail = @productions.detect{|x| ! x.symbol_name.kind_of? Symbol }
+        fail = productions.detect{|x| ! x.symbol_name.kind_of? Symbol }
         if fail
           sym_name = fail.symbol_name
           raise ParseParseFail("Must have only symbol names for "<<
           "productions, not #{fail.inspect}")
         end
-        @productions.each do |p|
+        productions.each do |p|
           next if p.kind_of? UnionSymbol # depends note1
           strname = p.symbol_name.to_s
           strname = "(##{p.production_id}) #{strname}" if show_pids
@@ -328,146 +244,7 @@ module Hipe
         end * "\n"
       end
     end
-
-
-    # *************** Production & Parse Mixins ***********************
-
-    module Productive
-      def symbol_name= name;
-        Productive.make_getter(self,:symbol_name,name)
-      end
-      def production_id= production_id
-        Productive.make_getter(self,:production_id,production_id)
-      end
-      def table_name= foo
-        Productive.make_getter(self,:table_name,foo)
-      end
-      def self.make_getter(obj,meth,val)
-        if obj.respond_to? meth
-          raise No.new('no')
-        end
-        class<<obj; self end.send(:define_method,meth){val}
-      end
-    end
-
-    module ParseStatusey
-      def done?
-        raise AppFail.new('no') if @done.nil?
-        @done
-      end
-      def ok?
-        raise AppFail.new('no') if @ok.nil?
-        @ok
-      end
-    end
-
-    module Inspecty
-      def class_basename
-        self.class.to_s.split('::').last
-      end
-      def insp; $stdout.puts inspct end
-      def inspct_tiny
-        sprintf("<%s%s#%s>",
-          class_basename.scan(/[A-Z]/).join(''),
-          @symbol_name.inspect,
-          @parse_id
-        )
-      end
-    end
-
-    module Misc
-      def bool? mixed
-        [TrueClass,FalseClass].include? mixed.class
-      end
-    end
-
-    module SymbolAggregatey
-      def _spawn ctxt, claz
-        if ctxt.tfpp.has? production_id
-          ParseReference.new ctxt, production_id
-        else
-          p = claz.new(self, ctxt) # note2
-          ctxt.tfpp.register(production_id, p)
-          p.resolve_children
-          p
-        end
-      end
-    end
-
-    module AggregateParsey
-      def _resolve_children symbol, ctxt
-        @children = symbol.children.map do |sym|
-          sym.spawn(ctxt)
-        end
-      end
-    end
-
-    def inspct_extra(ll,ctx,opts)
-    end
-
-    module AggregateParseInspecty
-      include Inspecty
-      def inspct_extra ll, ctx, opts
-      end
-      def inspct ctx=InspectContext.new, opts={}
-        if ctx.visiting.has? parse_id
-          opts[:word] = true
-        else
-          ctx.visiting.register parse_id, nil
-        end
-        my_ind = ctx.indent.dup
-        ctx.increment_indent
-        ll = []
-        ll << sprintf('#<%s:%s',class_basename,@parse_id.inspect)
-        ll << sprintf("@symbol_name=%s",@symbol_name.inspect)
-        ll << sprintf("@done=%s",@done.inspect)
-        ll << sprintf("@ok=%s",@ok.inspect)
-        inspct_extra(ll,ctx,opts)
-        if opts[:word]
-          ll << "@children(#{@children.size})"
-          return (ll*', '+' >')
-        end
-        l = []
-        l << (ll*",\n #{my_ind}")
-
-        last = @children.length - 1
-        l << " #{my_ind}@children(#{@children.size})="
-        @children.each_with_index do |c,i|
-          if (i==0)
-            s = ("  #{my_ind}["<<c.inspct(ctx))
-          else
-            s = ("   #{my_ind}"<<c.inspct(ctx))
-          end
-          s << ']' if i==last
-          l << s
-        end
-        l.last << '>'
-        l * "\n"
-      end
-    end
-
-    module LookieLocky
-      def look_lock
-        sett = parse_context.visiting(:look)
-        if sett.has? parse_id
-          throw :look_is_wip,  {:pid=>parse_id}
-        else
-          sett.register(parse_id, :look_wipping)
-        end
-        nil
-      end
-
-      def look_unlock
-        sett = parse_context.visiting(:look)
-        rm = sett.remove(parse_id)
-        raise No.new("unexpected value") unless :look_wipping == rm
-        nil
-      end
-
-      def parse_context
-        ParseContext.all[@context_id]
-      end
-    end
+    Grammar = Cfg       # external alias for readability
 
     class StringProduction
       include Productive
@@ -498,11 +275,8 @@ module Hipe
       end
     end
 
-    module Terminesque
-    end
-
     class StringParse
-      include ParseStatusey, Terminesque
+      include ParseStatusey, Terminesque, NaySayer
       def initialize prod
         @string = prod.string_literal
         @production_id = prod.production_id
@@ -510,7 +284,7 @@ module Hipe
         @ok = false
       end
       def look token
-        raise No.new("too many looks") if @done
+        no("too many looks") if @done
         @done = true
         if (token==@string)
           @ok = true
@@ -526,7 +300,7 @@ module Hipe
         return @value_tree unless @value_tree.nil?
         @value_tree =
           if (@done&&@ok)
-            ValueTreeNode.new(:string, nil, @production_id, @string)
+            ParseTree.new(:string, nil, @production_id, @string)
           else
             false
           end
@@ -535,7 +309,7 @@ module Hipe
     end
 
     class RegexpParse
-      include ParseStatusey, Inspecty, Terminesque
+      include ParseStatusey, Inspecty, Terminesque, NaySayer
       attr_accessor :matches, :name
       def initialize production
         @re = production.re
@@ -549,7 +323,7 @@ module Hipe
         (@ok && @done) ? ['no more input'] : [@name]
       end
       def look str
-        raise No.new("too many looks") if @done
+        no("too many looks") if @done
         @done = true
         md = @re.match(str)
         @md = md ? md : false
@@ -559,15 +333,15 @@ module Hipe
         inspect
       end
       def tree
-        return @vt unless @vt.nil?
-        @vt = begin
+        return @tree unless @tree.nil?
+        @tree = begin
           if ! @md then false
           else
             val = @md.captures.length > 0 ? @md.captures : @md[0]
-            ValueTreeNode.new(:regexp, @name, @production_id, val)
+            ParseTree.new(:regexp, @name, @production_id, val)
           end
         end
-        @vt
+        @tree
       end
     end
 
@@ -589,72 +363,62 @@ module Hipe
       def to_bnf_rhs; @target.to_s end
     end
 
-    class ParsesRegistry < RegistryList
-      def insp; @children.each{|x| x.insp}; nil end # outputs to $stdout
-    end
-
-    Parses = ParsesRegistry.new
-    $p = Parses # shh
-
     class ParseReference
-      include Misc
+      include Misc, NaySayer
       # this uses the variable name sett instead of set only b/c 'set'
       # is a command in ruby debug
       include Inspecty
+      @all = RegistryList.new
       class<<self
         attr_accessor :all
       end
-      @all = RegistryList.new
-      def initialize ctxt, production_id
-        p = ctxt.tfpp[production_id]
+      def initialize parse
         @ref_id = self.class.all.register(self)
-        @p = p
-        @ctxt_id = ctxt.context_id
+        @context_id = parse.parse_context.context_id
+        @parse_id = parse.parse_id
       end
-      def context
-        ParseContext.all[@ctxt_id]
-      end
-      def inspct ctx=InspectContext.new, o=nil
-        sprintf("#<%s:#%s:%s>",class_basename,@ref_id, @p.inspct(ctx))
+      def hypothetical?; false end
+      def target; Parses[@parse_id] end
+      def parse_context; ParseContext.all[@context_id] end
+      def inspct ctx=InspectContext.new, o={}
+        sprintf("#<%s:#%s:%s>",class_basename,@ref_id, target.inspct(ctx,o))
       end
       def look token
         # we let the implementors manage locking
-        @p.look token
+        target.look token
       end
       def ok?
-        pid = @p.parse_id
-        sett = context.visiting(:ok?)
+        pid = @parse_id
+        sett = parse_context.visiting(:ok?)
         if sett.has? pid
-          throw :ok_is_wip,  {:pid=>pid}
+          throw :ok_wip,  {:pid=>pid}
         else
           sett.register(pid, :ok_wipping)
-          rslt = @p.ok? # might be nil!?
+          rslt = target.ok? # might be nil!?
           unless bool? rslt
-            raise No.new("need bool has #{rslt.inspect} for pid #{pid}")
+            no("need bool has #{rslt.inspect} for pid #{pid}")
           end
           r2 = sett.remove(pid)
-          raise No.new('no wipping') unless :ok_wipping == r2
+          no('no wipping') unless :ok_wipping == r2
           rslt
         end
       end
       def done?
-        pid = @p.parse_id
-        sett = context.visiting(:done?)
+        pid = @parse_id
+        sett = parse_context.visiting(:done?)
         if sett.has? pid
           val = sett[pid]
           if val == :done_wipping
-            throw :done_is_wip
+            throw :done_wip
           else
-            raise No.new("for now this is the only way")
+            no("for now this is the only way")
           end
         else
           sett.register pid, :done_wipping
-          hard_to_get = @p.done?
+          hard_to_get = target.done?
           dip = sett.remove(pid)
           if ! (:done_wipping == dip)
-            debugger;
-            "whip no"
-            # raise No.new('no - dip')
+            no("no - dip")
           else
             rslt = hard_to_get
           end
@@ -663,12 +427,12 @@ module Hipe
       end
 
       def expecting
-        set = context.visiting(:expecting)
-        if set.has? @p.parse_id
+        set = parse_context.visiting(:expecting)
+        if set.has? @parse_id
           [] # not sure about this
         else
-          set.register @p.parse_id, nil
-          rslt = @p.expecting # might be nil!?
+          set.register @parse_id, nil
+          rslt = target.expecting # might be nil!?
           # not sure about this
           rslt
         end
@@ -679,10 +443,10 @@ module Hipe
       include Productive, SymbolAggregatey
       attr_accessor :children
       def initialize sym
-        @children = [sym]
+        @children = AryExt[[sym]]
       end
       def add child
-        raise No.new("children of a union must "<<
+        no("children of a union must "<<
         "have the same name: #{symbol_name.inspect}, "<<
         "#{child.symbol_name.inspect}") unless
           symbol_name == child.symbol_name
@@ -695,36 +459,41 @@ module Hipe
       # doesn't need reference_check as long as note1
     end
 
-    class InspectContext
-      attr_reader :indent, :visiting
-      def initialize
-        @indent = ''
-        @visiting = Setesque.new('nodes rendering')
-      end
-      def increment_indent
-        @indent << '  '
-      end
-    end
+    NotHypothetical = :is_not
+    IsHypothetical = :is
+    NoChildren     = :no
 
     class UnionParse
-      include AggregateParsey, AggregateParseInspecty, LookieLocky
+      include AggregateParsey, AggregateParseInspecty, LookieLocky, NaySayer
       attr_reader :parse_id # make sure this is set in constructor
+      attr_reader :children # debuggin
       def initialize union, ctxt # note2 - this is only called in one place
-        @symbol_name = union.symbol_name
         @production_id = union.production_id
-        @parse_id = Parses.register self
         @context_id = ctxt.context_id
-        @union_symbol = union
-        @ctxt = ctxt
+        @parse_id = Parses.register self
         @done = nil
         @ok = nil
         @have_looked = false
+        @hypothetical = NotHypothetical
+      end
+      def hypothetical?
+        @hypothetical == IsHypothetical
+      end
+      def kidnapping_notify(idxs);
+        no = @in_the_running & idxs
+        no("don't kidnap a child that is in the running (?)") if no.size > 0
+        nil
+      end
+      def kidnapped_notify(idxs,thing)
+        idxs.reverse.each do |idx|
+          @children.delete_at(idx)
+          # @children[idx] = {:kidnapped_to => thing.new_parent_id }
+        end
       end
       def resolve_children
-        _resolve_children @union_symbol, @ctxt
-        remove_instance_variable '@union_symbol'
-        remove_instance_variable '@ctxt'
+        _resolve_children
         # in the running is an *ordered* list of ids (ordered by precedence)
+        # that are not done (still accepting). doesn't matter if they are ok
         @in_the_running = (0..@children.length-1).map
       end
       def expecting
@@ -734,61 +503,59 @@ module Hipe
         end
         m
       end
-      def look token
-        # always set done and ok here or change their methods
-        raise No.new("won't look when done") if @done
+
+      def spawn_hypothetical caller
+        spwn = UnionParse.new(production, parse_context)
+        spwn.extend Hypothetic
+        spwn.init_hypothetic self, caller
+        spwn
+      end
+
+      def look token # always set done and ok here or change their methods
+        no("won't look when done") if @done
         look_lock
-        @done = nil
-        @prev_ok = @ok
-        @ok = nil
-        idx_ok   = []
-        idx_done = []
-        skipped_over = []
+        @done = nil; @prev_ok = @ok;  @ok = nil
+        idx_ok   = []; idx_done = []; skipped = []
         @in_the_running.each do |idx|
           child = @children[idx]
-          looking = catch(:look_is_wip) do
-            child.look(token)
-            nil
+          wip = catch(:look_wip){ child.look(token); nil }
+          if ! wip
+            idx_ok   << idx if child.ok?
+            idx_done << idx if child.done?
+          elsif wip[:pid] != @parse_id
+            throw :look_wip, wip
+          else
+            puts "#{inspct_tiny} skipping over #{token}" # see note5 ?
+            skipped << idx # still in the running
           end
-          if looking
-            if looking[:pid] != @parse_id
-              raise No.new("big problems - caught the wrong look wip")
-            else # see note5 !!!
-              puts "#{inspct_tiny} skipping over #{token}"
-              skipped_over << idx
-              idx_done     << idx
-              next
-            end
-          end
-          c_ok   = child.ok?
-          c_done = child.done?
-          idx_ok   << idx if c_ok
-          idx_done << idx if c_done
         end
-        # done_and_ok_this_round = idx_done & idx_ok
+        look_unlock
         @have_looked = true
+        @ok   = idx_ok.size > 0
         @in_the_running -= idx_done
         @done = @in_the_running.size == 0
-        @ok   = idx_ok.size > 0
-        look_unlock
-
-        # start experimental
-        if skipped_over.length > 0
-          skipped_over.each do |idx|
-            child = @children[idx]
-            child.look_again
-            c_ok    = child.ok?
-            c_done  = child.done?
-            idx_ok   << idx if c_ok
-            idx_done << idx if c_done
-          end
-        end
-        # end experimental
-
+        resolve_skipped(skipped) if skipped.length > 0
         if (@prev_ok && !@ok)
-          debugger; 'life of suck'
+          puts("#{inspct_tiny} was ok before, not ok after looking at "<<
+          "#{token}")
+          # no("more fun for you here")
         end
         nil
+      end
+
+      def resolve_skipped skipped
+        oks = []
+        dones = []
+        skipped.each do |idx|
+          child = @children[idx]
+          child.re_evaluate!
+          oks   << idx if child.ok?
+          dones << idx if child.done?
+        end
+        @in_the_running -= dones
+        if @ok == false
+          @ok = oks.size > 0
+        end
       end
 
       def winners; @children.select{|x| x.done? && x.ok? } end
@@ -797,7 +564,7 @@ module Hipe
         # you are ok if one of your children is ok
         return @ok unless @ok.nil?
         if @have_looked
-          raise No.new('why is ok not set if we have looked?')
+          no('why is ok not set if we have looked?')
         end
         @ok = !! @children.detect{|x| x.ok? }
       end
@@ -806,13 +573,13 @@ module Hipe
         # you are done iff all of your children are done
         return @done unless @done.nil?
         if @have_looked
-          raise No.new('why is done not set if we have looked?')
+          raise no('why is done not set if we have looked?')
         end
         @done = ! @children.detect{|c| ! c.done?}
       end
 
       def tree
-        @vt ||= begin
+        @tree ||= begin
           winners = self.winners
           if winners.size > 1
             winner = disambiguate_or_raise winners
@@ -825,23 +592,39 @@ module Hipe
         end
       end
 
-      def inspct_extra(ll,ctx,opts)
-        ll << sprintf("@in_the_running=%s",@in_the_running.inspect)
+      def tree_from_winner winner
+        my_val = winner.tree
+        ParseTree.new(:union, symbol_name, @production_id, my_val)
       end
 
       def disambiguate_or_raise winners
         one = winners.detect{|x| ! x.kind_of? Terminesque }
         if one
-          raise No.new(
+          $t = self
+          no(
           "ambiguous parse tree - more than one winner and they aren't all"<<
-          " terminal")
+          " terminal. Tree set to $t.")
         end
         winners.shift
       end
 
-      def tree_from_winner winner
-        my_val = winner.tree
-        ValueTreeNode.new(:union, @symbol_name, @production_id, my_val)
+      def inspct_extra(ll,ctx,opts)
+        inspct_attr(ll,'@in_the_running')
+        inspct_attr(ll, '@hypothetical'){|v| v!= NotHypothetical}
+      end
+
+      def prune_references!
+        remove = @children.each_with_index.select do |child,idx|
+          child.kind_of? ParseReference
+        end.map{|foo| foo[1]}
+        @in_the_running -= remove
+        removed = []
+        remove.reverse.each do |idx|
+          removed << @children.delete_at(idx)
+        end
+        @ok = @children.map{|c| c.ok?}.size > 0
+        @done = @in_the_running.size == 0
+        removed
       end
 
     end
@@ -857,6 +640,7 @@ module Hipe
           # need to register with the table and get production ids, etc
           p
         end
+        AryExt[@children]
       end
       def spawn ctxt
         _spawn ctxt, ConcatParse
@@ -874,75 +658,107 @@ module Hipe
     end
 
     class ConcatParse
-      include AggregateParsey, AggregateParseInspecty, LookieLocky
+      include AggregateParsey, AggregateParseInspecty, LookieLocky, NaySayer
       attr_reader :parse_id # make sure this is set in constructor
       attr_accessor :children
       def initialize(symbol, ctxt)
-        @table_name = symbol.table_name
-        @symbol_name = symbol.symbol_name
         @production_id = symbol.production_id
-        @parse_id = Parses.register self
         @context_id = ctxt.context_id
+        @parse_id = Parses.register self
         @offset = 0
-        @concat_symbol = symbol
-        @ctxt = ctxt
         @done = nil
         @ok = nil
         @last_token_seen = :none
+        @evaluate_tic = 0 # temp debugging stuff
+        @last_evaluate = nil
       end
 
       def inspct_extra(ll,ctx,opts)
-        ll << sprintf("@last_token_seen=%s",@last_token_seen.inspect)
+        inspct_attr(ll,%w(@last_token_seen @offset))
       end
 
       def resolve_children
-        _resolve_children @concat_symbol, @ctxt
-        remove_instance_variable '@concat_symbol'
-        remove_instance_variable '@ctxt'
+        _resolve_children
+        # *after* it processes the child at that index, it will be ..
         @ok_index   = @children.length - 1 # @todo trailing zero
-        @done_index = @children.length - 1
+        @final_index = @children.length - 1
       end
 
       def look token
+        no("concat won't look when done") if @done
+        look_lock
         @last_token_seen = token
-        raise No.new("concat won't look when done") if @done
+        # before we change our state ..
+        @children.select{|c| c.hypothetical?}.map(&:kidnap!)
         @done = nil
         @ok = nil
-        curr = @children[@offset]
-        @prev_ok = curr.ok?
-        raise No.new("child should never be done here") if curr.done?
-        look_lock
-        curr.look token
+        curr = @children[@offset] # might be a union that references self
+        no("child should never be done here") if curr.done?
+        child_prev_ok = curr.ok?
+        @evaluate_tic += 1
+        wip = catch(:look_wip) do
+          curr.look token # this can throw from a recursive child or another
+          nil
+        end
+        if ! wip
+          @child_prev_ok = child_prev_ok
+          re_evaluate!
+        elsif wip[:pid] != @parse_id
+          throw :look_wip, wip
+        else # we skip over the recursive child if it was ok and
+          # look with the next child and evaluate there
+          advance_over_recursive_child!
+          curr = @children[@offset]
+          @child_prev_ok = curr.ok?
+          curr.look token
+          re_evaluate!
+        end
         look_unlock
+      end
+
+      def advance_over_recursive_child!
+        curr = @children[@offset]
+        no("not going to advance over recusive child unless "<<
+        "it is ok") unless curr.ok?
+        no("haven't dealt with current being done before") if curr.done?
+        no("have never dealt with when recursive child is final element") if
+          @offset == @final_index
+        was_done = curr.done?
+        refs = curr.prune_references! # @todo i think we want these?
+        if ! was_done
+          # ...
+        end
+        @offset += 1
+        nil
+      end
+
+      def re_evaluate!
+        no("tried to evaluate twice on the same token!") if
+          (@last_evaluate==@evaluate_tic)
+        @last_evaluate = @evaluate_tic
+        curr = @children[@offset]
         if curr.done?
-          curr.ok? ? advance_done_and_ok : advance_done_and_not_ok(token)
+          curr.ok? ? advance_done_and_ok : advance_done_and_not_ok
         else
           curr.ok? ? advance_not_done_and_ok : advance_not_done_and_not_ok
         end
-
-      end
-
-
-      def look_again
-        $p.insp
-        puts("exiting at #{__FILE__}#{__LINE__}")
-        exit
-        debugger
-        'x'
       end
 
       def advance_done_and_ok # our favorite state
-        if @offset < @done_index
+        # the child we just evaluated was done and ok,
+        # we move forward or we are finished!
+        @ok   = @offset >= @ok_index
+        @done = @offset >= @final_index
+        if @offset < @final_index
           @offset += 1
         end
-        @ok   = @offset >= @ok_index
-        @done = @offset >= @done_index
+        nil
       end
 
-      def advance_done_and_not_ok(token) # note3
-        if @prev_ok
-          debugger; "implement child is not ok,
-            was ok before, need to look again"
+      def advance_done_and_not_ok # note3
+        if @child_prev_ok
+          no("implement child is not ok,
+            was ok before, need to look again")
         else
           # leave offset alone for now per note3
           @done = true
@@ -953,13 +769,18 @@ module Hipe
       def advance_not_done_and_ok
         # stay here, we will use note3 algorithm
         @ok   = @offset >= @ok_index
-        @done = @offset >= @done_index
+        @done = @offset >= @final_index
+        curr = @children[@offset]
+        # uh, we want to insulate its state change
+        # when it gets a next token
+        if curr.kind_of? ParseReference
+          nu = curr.target.spawn_hypothetical self
+          @children[@offset] = nu
+        end
       end
 
       def advance_not_done_and_not_ok
-        if @prev_ok
-          debugger; "i hate this one - probably advance"
-        end
+        # always stay
         @done = false
         @ok   = @offset >= @ok_index
       end
@@ -972,26 +793,54 @@ module Hipe
       def done?
         # todo this returns lies at the beginning note4 (see test)
         return @done unless @done.nil?
-        @offset >= @done_index
+        @offset >= @final_index
       end
 
       def expecting
         rs = @children[@offset].expecting
         rs
       end
+
+      def tree
+        childs = @children.map(&:tree)
+        ParseTree.new(:concat, symbol_name, @production_id, childs)
+      end
     end
 
-    class ValueTreeNode < Struct.new(
+    class ParseTree < Struct.new(
       :type, :symbol_name, :production_id, :value
-    ); end
-
+    )
+      def inspct ctx=InspectContext.new,opts={};
+        l = []
+        ind = ctx.indent.dup
+        ctx.indent_indent!
+        l << sprintf(
+          "#<ParseTree tp:%s nm:%s prod:%s chldrn:",
+          type,symbol_name,production_id
+        )
+        if value.kind_of? ParseTree
+          l << value.inspct(ctx,opts)
+        else
+          l << value.inspect
+        end
+        l.last << ">"
+        s = l.join(" ")
+        if s.length < 80
+          return s
+        else
+          return l * "\n   #{ind}"
+        end
+      end
+    end
   end
 end
 # note1 - UnionSymbols are only ever created by the table, pipe operator not
 #  supported
-# note2 - see above
+# note2 - that is only called in one place
 # note3 - this is our 'look again' algorithm
 # note5 - @todo: we just skip recusive looks !?
 #   the node that invokes us, self, is that forever
 #   out of the running !??
 #   we are forever out of the running if we are looking !??
+# note6 - the whole re-evaluate thing might be better served by code blocks?
+# note7 - tfpp is ridiculous - its a way to avoid recursion

@@ -7,7 +7,7 @@ require "#{root}/test/helpers.rb"
 
 module Hipe::Parsie
   describe "grammar tables" do
-    extend Hipe::Skippy
+    extend Hipe::MinitestExtraClassMethods
 
     it "should raise on unresolved references, singular" do
       e = proc do

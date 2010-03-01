@@ -7,7 +7,7 @@ require "#{root}/test/helpers.rb"
 
 module Hipe::Parsie
   describe "concat basic - mimimalesque grammar" do
-    extend Hipe::Skippy
+    extend Hipe::MinitestExtraClassMethods
     def page5
       Grammar.clear_tables!
       @page5 = Grammar.new('minimalesque grammar') do |g|
@@ -62,18 +62,18 @@ module Hipe::Parsie
 
     it "should fail on invalid input of one token" do
       msg = fail_msg(page5,"abc")
-      msg.must_equal "expecting digit near \"abc\""
+      msg.must_equal "expecting digit at end of input near \"abc\""
     end
 
     it "should fail on invalid input of two tokens" do
       msg = fail_msg(page5,"abc")
-      msg.must_equal "expecting digit near \"abc\""
+      msg.must_equal "expecting digit at end of input near \"abc\""
     end
 
   end
 
   describe "concat basic - short grammar" do
-    extend Hipe::Skippy
+    extend Hipe::MinitestExtraClassMethods
 
     def page43
       Grammar.clear_tables!
