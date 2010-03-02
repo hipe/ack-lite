@@ -104,5 +104,40 @@ module Hipe::Parsie
         end
       end
     end
+
+    skipit "should parse four valid tokens (5)" do
+      parser = page5
+      parse = parser.parse! "501\n502\n503\n504"
+      fail = parser.parse_fail
+      debugger
+      puts fail.describe
+      pars = fail.parse
+      debugger
+      'wow you rock so hard J'
+      tree = parse.tree
+      # tree.must :union, :list do |tree|
+      #   tree.must :concat, :list, 2 do |arr1|
+      #     arr1[0].must :union, :list do |tree|
+      #       tree.must :concat, :list do |arr2|
+      #         arr2[0].must :union, :list do |re|
+      #           re.must :regexp, :digit do |val|
+      #             val.must_equal "111"
+      #           end
+      #         end
+      #         arr2[1].must :regexp, :digit do |val|
+      #           val.must_equal "112"
+      #         end
+      #       end
+      #     end
+      #     arr1[1].must :regexp, :digit do |val|
+      #       val.must_equal "113"
+      #     end
+      #   end
+      # end
+    end
+
+
+
+
   end
 end

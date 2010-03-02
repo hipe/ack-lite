@@ -152,6 +152,7 @@ module Hipe
         tokenizer = build_tokenizer mixed
         parse = symbol(@start_symbol_name).spawn(ctxt)
         while token = tokenizer.pop
+          # puts "tokne #{token}"
           ctxt.tic
           parse.look token
           # @todo push back on the stack for partial matches

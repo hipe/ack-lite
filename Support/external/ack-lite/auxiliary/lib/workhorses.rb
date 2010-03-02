@@ -27,12 +27,17 @@ module Hipe
           # @children[idx] = {:kidnapped_to => thing.new_parent_id }
         end
       end
-      def resolve_children
-        _resolve_children
+      def build_children!
+        context = parse_context
+        @children = production.children.map do |sym|
+          sym.spawn context
+        end
+        AryExt[@children]
         # in the running is an *ordered* list of ids (ordered by precedence)
         # that are not done (still accepting). doesn't matter if they are ok
         @in_the_running = (0..@children.length-1).map
       end
+      # @todo the below should take into account in the running!
       def expecting
         m = []
         @children.each_with_index do |c,i|
@@ -205,19 +210,30 @@ module Hipe
         inspct_attr(ll,%w(@last_token_seen @offset))
       end
 
-      def resolve_children
-        _resolve_children
-        # *after* it processes the child at that index, it will be ..
-        @ok_index   = @children.length - 1 # @todo trailing zero
-        @final_index = @children.length - 1
-      end
-
-      def make_empty_children!
+      def build_empty_children!
         @children = Array.new(production.children.size)
         AryExt[@children]
         @ok_index   = @children.length - 1 # @todo trailing zero
         @final_index = @children.length - 1
+        nil
       end
+
+      def build_children!
+        build_empty_children!
+        prod = production
+        no('test empty children') if prod.children.size == 0
+        @children[0] = prod.children[0].spawn(parse_context)
+        nil
+      end
+
+        # _build_children
+        # # *after* it processes the child at that index, it will be ..
+        # @ok_index   = @children.length - 1 # @todo trailing zero
+        # @final_index = @children.length - 1
+      # end
+      #
+      # def make_empty_children!
+      # end
 
       def look token
         puts "#{inspct_tiny} sees token \"#{token}\"" if Debug
@@ -274,7 +290,7 @@ module Hipe
           hyp = curr._hypothetic
           victim = hyp.orig_parent
           nu = ConcatParse.new production, parse_context
-          nu.make_empty_children!
+          nu.build_empty_children!
           nu.children[@offset] = ParseReference.new victim
           nu._set_offset! @offset
           victim._add_not_done_child! nu

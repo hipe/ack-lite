@@ -96,7 +96,7 @@ module Hipe
         else
           p = claz.new(self, ctxt) # note2
           ctxt.tfpp.register(production_id, p)
-          p.resolve_children
+          p.build_children!
           p
         end
       end
@@ -111,13 +111,6 @@ module Hipe
       end
       def symbol_name
         production.symbol_name
-      end
-      def _resolve_children
-        ctxt = parse_context
-        @children = production.children.map do |sym|
-          sym.spawn(ctxt)
-        end
-        AryExt[@children]
       end
     end
 
