@@ -66,6 +66,7 @@ module Hipe
         @children.each(&b)
       end
       def insp; @children.insp; '' end
+      def size; @children.size end
     end
 
     module UserFailey

@@ -1,6 +1,11 @@
 module Hipe
   module Parsie
 
+    NotHypothetical = :is_not
+    IsHypothetical = :is
+    NoChildren     = :no
+    Debug          = false # ick
+
     module NaySayer; def no msg; raise No.new(msg) end end
 
     module AryExt
@@ -59,7 +64,7 @@ module Hipe
       def inspct_tiny
         sprintf("<%s%s#%s>",
           class_basename.scan(/[A-Z]/).join(''),
-          @symbol_name.inspect,
+          symbol_name.inspect,
           @parse_id
         )
       end
@@ -138,9 +143,12 @@ module Hipe
         else
           ctx.visiting.register parse_id, nil
         end
-        a = opts[:visited] ? '(again:)' : ''
         ind = ctx.indent.dup
         ctx.indent_indent!
+        if false && opts[:word]
+          return "#<again##{@parse_id}>"
+        end
+        a = opts[:visited] ? '(again:)' : ''
         ll = []
         ll << sprintf("#<#{a}%s:%s",class_basename,@parse_id.inspect)
         ll << sprintf("symbol_name=%s",symbol_name.inspect)
@@ -171,10 +179,11 @@ module Hipe
         return @children.inspect unless @children
         last = @children.length - 1
         @children.each_with_index do |c,i|
+          ss = c ? c.inspct(ctx, opts) : c.inspect
           if (i==0)
-            s = ("  #{my_ind}["<<c.inspct(ctx, opts))
+            s = ("  #{my_ind}["<<ss)
           else
-            s = ("   #{my_ind}"<<c.inspct(ctx, opts))
+            s = ("   #{my_ind}"<<ss)
           end
           s << ']' if i==last
           l << s
@@ -215,8 +224,8 @@ module Hipe
 
       def caller; Parses[@caller_parse_id] end
 
-      # there are no victimless crimes
-      def victim; Parses[@orig_parse_id] end
+      # there are no orig_parentless crimes
+      def orig_parent; Parses[@orig_parse_id] end
 
       attr_reader :new_parent_id
       def new_parent; Parses[@new_parent_id] end
@@ -226,8 +235,8 @@ module Hipe
         nu_children = []
         caller_parse_id = caller.parse_id
         metas = []
-        itr = victim.instance_variable_get('@in_the_running')
-        victim.children.each_with_index do |p,i|
+        itr = orig_parent.instance_variable_get('@in_the_running')
+        orig_parent.children.each_with_index do |p,i|
           pid = p.kind_of?(Terminesque) ? nil : p.parse_id
           is_caller = (! pid.nil?) && pid == caller_parse_id
           metas << {
@@ -238,15 +247,15 @@ module Hipe
         num = metas.select{|x| x[:is_caller] }.size
         no("caller should be there exactly once") unless num == 1
         to_take = metas.select{|x| ! x[:is_caller] }.map{|x| x[:idx] }
-        victim.kidnapping_notify(to_take)
+        orig_parent.kidnapping_notify(to_take)
         metas.each do |meta|
           if meta[:is_caller]
             nu_children << ParseReference.new(caller)
           else
-            nu_children << victim.children[meta[:idx]]
+            nu_children << orig_parent.children[meta[:idx]]
           end
         end
-        victim.kidnapped_notify(to_take,self)
+        orig_parent.kidnapped_notify(to_take,self)
         new_parent.instance_variable_set('@children', nu_children)
         new_parent.instance_variable_set('@hypothetical', NotHypothetical)
         nil
@@ -259,6 +268,8 @@ module Hipe
       def kidnap!
         @hypothetic.kidnap
       end
+
+      def _hypothetic; @hypothetic; end
 
       def init_hypothetic orig, caller
         @hypothetical = IsHypothetical
