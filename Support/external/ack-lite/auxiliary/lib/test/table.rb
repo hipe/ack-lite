@@ -7,9 +7,8 @@ require "#{root}/test/helpers.rb"
 
 module Hipe::Parsie
   describe "grammar tables" do
-    extend Hipe::MinitestExtraClassMethods
-
-    it "should raise on unresolved references, singular" do
+    extend SpecExtension
+    it "should raise on unresolved references, singular (1)" do
       e = proc do
         Grammar.clear_tables!
         g = Grammar.new("thingo") do |g|
@@ -24,7 +23,7 @@ module Hipe::Parsie
       e.message.must_equal target
     end
 
-    it "should raise on unresolved references, plural" do
+    it "should raise on unresolved references, plural (2)" do
       e = proc do
         Grammar.clear_tables!
         g = Grammar.new("thingo") do |g|
@@ -39,7 +38,7 @@ module Hipe::Parsie
       e.message.must_equal target
     end
 
-    it "should not raise on unresolved references if not asked to" do
+    it "should not raise on unresolved references if not asked to (3)" do
       assert_block do
         Grammar.clear_tables!
         g = Grammar.new("thingo") do |g|

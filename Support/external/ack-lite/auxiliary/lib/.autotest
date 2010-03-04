@@ -1,0 +1,86 @@
+# -*- ruby -*-
+$TESTING = $DEBUG = true # autotest debugging
+
+gem 'ruby-debug'
+require 'ruby-debug'
+
+gem 'autotest-fsevent'
+
+gem     'redgreen'
+require 'redgreen/autotest'
+
+
+require 'autotest/fsevent'
+
+# require 'autotest/rcov'  LOOKING FOR RAKEFILE
+require 'autotest/restart'
+require 'autotest/timestamp'
+
+
+if true
+
+  gem     'autotest-growl'
+  require 'autotest/growl'
+
+  Autotest::Growl::show_modified_files = true
+  Autotest::Growl::one_notification_per_run = false
+  Autotest::Growl::clear_terminal = false
+  Autotest::Growl::hide_label = false
+end
+
+# require 'autotest/rcov'
+# Autotest::RCov.command = 'rcov_info'
+# Autotest::RCov.pattern = o
+
+
+
+module Hipe
+  module AutotestInstanceMethods
+    # we were gonna use this in hipe_add_mapping but just run it with --verbose
+    # def hipe_growl title, message, icon_type=info
+    #   unless /\A(?:error|failed|info|passed|pending)\Z/ =~ icon_type
+    #     message << " (bad image type in your grown message: #{icon_type})"
+    #     icon_type = 'info'
+    #   end
+    #   img = "../ampelmaennchen/#{icon_type}"
+    #   Autotest::Growl.growl title, message, img
+    # end
+
+    # we were going to
+    # warn you when in your .autotest file you add a mapping
+    # for which there is no corresponding test files or source files
+    # but just run with verbose
+    def hipe_add_mapping *args, &block
+      add_mapping(*args, &block)
+    end
+  end
+end
+
+
+Autotest.add_hook :initialize do |at|
+  at.extend Hipe::AutotestInstanceMethods
+  at.clear_mappings
+  at.hipe_add_mapping(/^(test\/(?!all|helpers)(.+)\.rb)$/) do |fn, md|
+    ['string','regexp'].include?(md[2]) ? md[1] : []
+  end
+  # at.hipe_add_mapping(/^parsie.rb/) do |fn, md|
+  #   ['test/all.rb']
+  # end
+  at.hipe_add_mapping(/^terminal-parsers\.rb/) do |fn, md|
+    ['test/string.rb', 'test/regexp.rb']
+  end
+  at.extra_class_map["SingleStringGrammarSpec"] = "test/string.rb"
+  at.add_exception "nonterimal-parsers.rb"
+  at.add_exception "parse-support.rb"
+  at.add_exception "productions.rb"
+  at.add_exception "support.rb"
+  at.add_exception "table-and-tokenizer.rb"
+  at.add_exception "terminal-parsers.rb"
+end
+
+#   # at.add_mapping(/^lib\/.*\.rb$/) do |filename, _|
+#   #   debugger
+#   #   possible = File.basename(filename).gsub '_', '_?'
+#   #   files_matching %r%^test/.*#{possible}$%
+# Autotest::AutoUpdate.sleep_time = 10
+# Autotest::AutoUpdate.update_cmd = ''

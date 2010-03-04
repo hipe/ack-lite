@@ -7,22 +7,21 @@ require "#{root}/test/helpers.rb"
 
 module Hipe::Parsie
   describe "tokenizer" do
-    extend Hipe::MinitestExtraClassMethods
-    it "should" do
+    it "should do this (1)" do
       t = StringLinesTokenizer.new("")
       t.describe.must_match "at beginning of input"
       t.pop.must_equal nil
       t.pop.must_equal nil
       t.describe.must_match "and had no input"
     end
-    it "should also" do
+    it "should also do this (2)" do
       t = StringLinesTokenizer.new("foo")
       t.pop.must_equal "foo"
       t.describe.must_match 'near "foo"'
       t.pop.must_equal nil
       t.describe.must_match 'at end of input near "foo"'
     end
-    it "should also this" do
+    it "should also this too (3)" do
       t = StringLinesTokenizer.new("foo\nbar")
       t.pop.must_equal "foo"
       t.pop.must_equal "bar"

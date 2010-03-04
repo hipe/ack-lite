@@ -1,7 +1,30 @@
 module Hipe
   module Parsie
+
+    module Misc
+      def bool? mixed
+        [TrueClass,FalseClass].include? mixed.class
+      end
+      def no taxes
+        raise No.new taxes
+      end
+    end
+
+    module AryExt
+      def self.[] ary
+        ary.extend self
+      end
+      def insp
+        c = InspectContext.new
+        each do |x|
+          x.respond_to?(:inspct) ? puts(x.inspct(c)) : puts(x.inspect)
+        end
+        nil
+      end
+    end
+
     class Setesque
-      include NaySayer
+      include Misc
       class Enumerator
         include Enumerable
         def initialize settie
