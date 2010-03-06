@@ -6,7 +6,7 @@ require "#{root}/test/helpers.rb"
 
 
 module Hipe::Parsie
-  describe "single string grammar" do
+  describe "string" do
     extend SpecExtension
     before do
       Grammar.clear_tables!
@@ -21,7 +21,7 @@ module Hipe::Parsie
     end
 
     it "should fail on one wrong string (2)" do
-      @g.must_fail "bar", "expecting \"foo\" at end of input near \"bar\""
+      @g.must_fail "bar", "expecting \"foo\" near \"bar\""
     end
 
     it "should parse on one right string (3)" do
@@ -32,7 +32,10 @@ module Hipe::Parsie
     end
 
     it "should fail when there's still more input (4)" do
-      @g.must_fail "foo\nbar", "expecting no more input near \"foo\""
+      @g.must_fail(
+        "foo\nbar",
+        "expecting no more input near \"bar\""
+      )
     end
   end
 end

@@ -60,27 +60,47 @@ end
 Autotest.add_hook :initialize do |at|
   at.extend Hipe::AutotestInstanceMethods
   at.clear_mappings
-  at.hipe_add_mapping(/^(test\/(?!all|helpers)(.+)\.rb)$/) do |fn, md|
-    ['string','regexp'].include?(md[2]) ? md[1] : []
-  end
-  # at.hipe_add_mapping(/^parsie.rb/) do |fn, md|
-  #   ['test/all.rb']
-  # end
   at.hipe_add_mapping(/^terminal-parsers\.rb/) do |fn, md|
     ['test/string.rb', 'test/regexp.rb']
   end
-  at.extra_class_map["SingleStringGrammarSpec"] = "test/string.rb"
-  at.add_exception "nonterimal-parsers.rb"
-  at.add_exception "parse-support.rb"
-  at.add_exception "productions.rb"
-  at.add_exception "support.rb"
-  at.add_exception "table-and-tokenizer.rb"
-  at.add_exception "terminal-parsers.rb"
-end
+  at.hipe_add_mapping(/^nonterminal-parsers\.rb/) do |fn, md|
+    [ 'test/concat-basic.rb',
+      'test/union-basic.rb',
+      'test/structured-basic.rb'
+    ]
+  end
+  at.hipe_add_mapping(/^table-and-tokenizer.rb/) do |f,m|
+    [ 'test/table.rb'
+    ]
+  end
+  at.hipe_add_mapping(/^terminal-parsers.rb/) do |f,m|
+    [ 'test/string.rb',
+      'test/regexp.rb'
+    ]
+  end
+  at.add_exception ".autotest"
+  tests = %w(
+    all concat-basic regexp string
+    structured-basic table tokenizer
+    union-basic
+  )
+  tests.each do |basename|
+    name = "test/#{basename}.rb"
+    re = Regexp.new('^'+Regexp.escape(name))
+    at.hipe_add_mapping(re){ |f,m| [name] }
+  end
+  all = %w(
+    parse-support general-support productions
+    nonterminal-inspecty parsie
+  )
+  all.each do |basename|
+    name = Regexp.new(Regexp.escape("#{basename}.rb"))
+    at.hipe_add_mapping(name){|f,m| ['test/all.rb'] }
+  end
 
-#   # at.add_mapping(/^lib\/.*\.rb$/) do |filename, _|
-#   #   debugger
-#   #   possible = File.basename(filename).gsub '_', '_?'
-#   #   files_matching %r%^test/.*#{possible}$%
-# Autotest::AutoUpdate.sleep_time = 10
-# Autotest::AutoUpdate.update_cmd = ''
+  at.extra_class_map["ConcatBasicSpec"] = "test/concat-basic.rb"
+  at.extra_class_map["StructuredBasicSpec"] = "test/structured-basic-spec.rb"
+  at.extra_class_map["UnionBasicSpec"] = "test/union-basic-spec.rb"
+
+  at.add_exception "test/helpers.rb"  #
+end

@@ -168,17 +168,27 @@ module Hipe
           prod
         end
         AryExt[@children]
-        @final_offset = nil
-        @satisfied_offset = nil
+        @final_offset = @zero_width_map = @satisfied_offset =
+          @zero_width = nil
+      end
+      def zero_width_map
+        determine_offsets! if @zero_width_map.nil?
+        @zero_width_map
+      end
+      def zero_width?
+        determine_offsets! if @zero_width.nil?
+        @zero_width
       end
       def build_parse ctxt
         nonterminal_common_build_parse ctxt, ConcatParse
       end
       def determine_offsets!
+        @zero_width_map = @children.map(&:zero_width?)
+        @zero_width = ! @zero_width_map.detect{|x| x == false}
         @final_offset = @children.length - 1;
         # find the first offset that is not zero width starting from end
         idx = (0..@final_offset).map.reverse.detect do |i|
-          !@children[i].zero_width?
+          false==@zero_width_map[i]
         end
         idx ||= -1
         @satisfied_offset = idx

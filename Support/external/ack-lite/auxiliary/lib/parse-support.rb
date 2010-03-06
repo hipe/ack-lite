@@ -1,16 +1,20 @@
 module Hipe
   module Parsie
-    OPEN      = 1
-    SATISFIED = 2
+    OPEN      = 1 # == ! done?
+    SATISFIED = 2 # == ok?
     WANTS     = 4
     Parses = RegistryList.new
     Contexts = RegistryList.new
+
     Debug = Object.new
     class << Debug
       def true?; @true end
       def true= val; @true = val end
+      def look?; @looks end
+      def look= val; @looks = val end
     end
     Debug.true = false
+    Debug.look = false
 
     $p = Parses # shh
 
@@ -62,7 +66,7 @@ module Hipe
       def class_basename
         self.class.to_s.split('::').last
       end
-      def insp; $stdout.puts inspct end
+      def insp; $stdout.puts inspct; 'done.' end
       def inspct_tiny
         sprintf("<%s%s#%s>",
           class_basename.scan(/[A-Z]/).join(''),

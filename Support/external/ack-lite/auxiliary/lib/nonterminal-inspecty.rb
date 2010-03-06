@@ -5,11 +5,11 @@ module Hipe
       def inspct_extra ll, ctx, opts
       end
       def inspct ctx=InspectContext.new, opts={}
-        if ctx.visiting.has? parse_id
+        if ctx.visited.has? parse_id
           opts[:word] = true
           opts[:visited] = true
         else
-          ctx.visiting.register parse_id, nil
+          ctx.visited.register parse_id, nil
         end
         ind = ctx.indent.dup
         ctx.indent_indent!

@@ -33,7 +33,7 @@ module Hipe
         SATISFIED
       end
       def expecting
-        (@ok && @done) ? ['no more input'] : [@string.inspect]
+        (@ok && @done) ? [] : [@string.inspect]
       end
       def inspct ctxt, o=nil; inspect end
       def tree
@@ -62,7 +62,7 @@ module Hipe
         @ok = false    # @todo some regexs will be zero width
       end
       def expecting
-        (@ok && @done) ? ['no more input'] : [@symbol_name]
+        (@ok && @done) ? [] : [@symbol_name]
       end
       def look str
         no "won't look when done" if @done

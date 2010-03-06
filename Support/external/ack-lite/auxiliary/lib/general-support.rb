@@ -5,8 +5,22 @@ module Hipe
       def bool? mixed
         [TrueClass,FalseClass].include? mixed.class
       end
+      def desc_bool name
+        "#{name}:#{send(name) ? 'yes' : 'no'}"
+      end
       def no taxes
         raise No.new taxes
+      end
+    end
+
+    class InspectContext
+      attr_reader :indent, :visited
+      def initialize
+        @indent = ''
+        @visited = Setesque.new('visited')
+      end
+      def indent_indent!
+        @indent << '    '
       end
     end
 
@@ -19,7 +33,7 @@ module Hipe
         each do |x|
           x.respond_to?(:inspct) ? puts(x.inspct(c)) : puts(x.inspect)
         end
-        nil
+        'done.'
       end
     end
 
@@ -88,7 +102,7 @@ module Hipe
       def each &b
         @children.each(&b)
       end
-      def insp; @children.insp; '' end
+      def insp; @children.insp; 'done.' end
       def size; @children.size end
     end
 
@@ -124,8 +138,9 @@ module Hipe
 
       def describe
         ex = @parse.expecting.uniq
+        expecting = ex.size == 0 ? 'no more input' : ex.join(' or ')
         prepositional_phrase = @tokenizer.describe
-        "expecting #{ex.join(' or ')} #{prepositional_phrase}"
+        "expecting #{expecting} #{prepositional_phrase}"
       end
 
     end

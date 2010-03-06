@@ -2,6 +2,37 @@ module Hipe
 
   module Parsie
 
+    class Cfg
+
+      def parse! mixed
+        ctxt = ParseContext.new
+        tokenizer = build_tokenizer mixed
+        parse = build_start_parse ctxt
+        while ( ! parse.done? ) && ( token = tokenizer.peek )
+          ctxt.tic
+          resp = parse.look token
+          if 0 != WANTS & resp
+            parse.take! token
+            tokenizer.pop!
+          else
+            break
+          end
+          break if parse.done?
+        end
+        if ! parse.ok?
+          pf = ParseFail.new(tokenizer, parse)
+        elsif tokenizer.has_more_tokens?
+          pf = ParseFail.new(tokenizer, parse)
+        else
+          pf = nil
+        end
+        parse.fail = pf if pf
+        parse
+      end
+
+    end
+
+
     class StringLinesTokenizer
       # this is a sandbox for experimenting with tokenizer interface,
       # for use possibly in something more uselful like in input stream
@@ -14,7 +45,12 @@ module Hipe
         @offset = -1;
         @last_offset = @lines.length - 1
       end
-      def pop
+      def peek
+        hypothetical = @offset + 1
+        return nil if hypothetical > @last_offset
+        @lines[hypothetical]
+      end
+      def pop!
         return nil if @offset > @last_offset
         @offset += 1 # let it get one past last offset
         @lines[@offset]
@@ -23,16 +59,18 @@ module Hipe
         @offset < @last_offset # b/c pop is the only way to go
       end
       def describe
-        if @offset == -1
+        # assume there was peeking
+        use_offset = @offset + 1
+        if use_offset == -1
           "at beginning of input"
-        elsif @offset > @last_offset
+        elsif use_offset > @last_offset
           if @lines.length == 0
             "and had no input"
           else
-            "at end of input near "+@lines[@offset-1].inspect
+            "at end of input near "+@lines[@last_offset].inspect
           end
         else
-          "near \""+@lines[@offset]+'"'
+          "near \""+@lines[use_offset]+'"'
         end
       end
     end
@@ -105,32 +143,6 @@ module Hipe
       # the argument is given a default just for testing
       def build_start_parse ctxt= ParseContext.new
         symbol(@start_symbol_name).build_parse(ctxt)
-      end
-
-      def parse! mixed
-        ctxt = ParseContext.new
-        tokenizer = build_tokenizer mixed
-        parse = build_start_parse ctxt
-        if ! parse.done?
-          while token = tokenizer.pop
-            ctxt.tic
-            resp = parse.look token
-            # @todo push back on the stack for partial matches
-            if 0 != WANTS & resp
-              parse.take! token
-            end
-            break if parse.done?
-          end
-        end
-        if ! parse.ok?
-          pf = ParseFail.new(tokenizer, parse)
-        elsif tokenizer.has_more_tokens?
-          pf = ParseFail.new(tokenizer, parse)
-        else
-          pf = nil
-        end
-        parse.fail = pf if pf
-        parse
       end
 
       def reference_check
@@ -206,9 +218,5 @@ module Hipe
       end
     end
     Grammar = Cfg       # external alias for readability
-
-
-
-
   end
 end
