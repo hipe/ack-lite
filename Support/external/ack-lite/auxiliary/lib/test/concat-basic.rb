@@ -141,47 +141,43 @@ module Hipe::Parsie
     end
 
     it "three nonzeros against empty string (11)" do
-      three_nonzeros.must_fail("",  "expecting \"alpha\" and had no input")
+      three_nonzeros.parse!("").must_fail(
+        "expecting \"alpha\" and had no input"
+      )
     end
 
     it "three nonzeros against one good token (12)" do
-      three_nonzeros.must_fail(
-        "alpha",
+      three_nonzeros.parse!("alpha").must_fail(
         "expecting beta at end of input near \"alpha\""
       )
     end
 
     it "three nonzeros against one bad token (13)" do
-      three_nonzeros.must_fail(
-        "baterz",
+      three_nonzeros.parse!("baterz").must_fail(
         "expecting \"alpha\" near \"baterz\""
       )
     end
 
     it "three nonzeros against two bad tokens (14)" do
-      three_nonzeros.must_fail(
-        "alpherz\nbaterz",
+      three_nonzeros.parse!("alpherz\nbaterz").must_fail(
         "expecting \"alpha\" near \"alpherz\""
       )
     end
 
     it "three nonzeros against one good one bad (15)" do
-      three_nonzeros.must_fail(
-        "alpha\nbaterz",
+      three_nonzeros.parse!("alpha\nbaterz").must_fail(
         "expecting beta near \"baterz\""
       )
     end
 
     it "three nonzeros against good good bad (16)" do
-      three_nonzeros.must_fail(
-        "alpha\nbbbbeeetttaaaa\ngammerz",
+      three_nonzeros.parse!("alpha\nbbbbeeetttaaaa\ngammerz").must_fail(
         "expecting \"gamma\" near \"gammerz\""
       )
     end
 
     it "three nonzeros with an extra token at the end (17)" do
-      three_nonzeros.must_fail(
-        "alpha\nbbbbeeetttaaaa\ngamma\nblaaaz",
+      three_nonzeros.parse!("alpha\nbbbbeeetttaaaa\ngamma\nblaaaz").must_fail(
         "expecting no more input near \"blaaaz\""
       )
     end

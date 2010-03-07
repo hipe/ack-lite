@@ -35,6 +35,13 @@ module Hipe
       end
     end
 
+    module Decisioney
+      def insp
+        puts inspct_tiny
+        'done.'
+      end
+    end
+
     module FaileyMcFailerson
       def fail= parse_fail
         no("type assert fail") unless parse_fail.kind_of? ParseFail
@@ -59,6 +66,34 @@ module Hipe
       def ok?
         no("asking ok when ok is nil") if @ok.nil?
         @ok
+      end
+    end
+
+    module Hookey
+      include Misc # no()
+      def has_hook_once hook_name
+        add_name = "hook_once_#{hook_name}".to_sym
+        run_name = "run_hook_onces_#{hook_name}".to_sym
+        @defined_hook_onces ||= {}
+        no("won't redefine a hook") if @defined_hook_onces[hook_name]
+        @defined_hook_onces[hook_name] = true
+        module_eval do
+          define_method(add_name) do |&block|
+            no("no") unless block # will kill our each logic below
+            @hook_onces ||= Hash.new{|h,k| h[k] = []}
+            @hook_onces[hook_name] << block
+          end
+
+          define_method(run_name) do |&block|
+            return -1 if @hook_onces.nil?
+            num_ran = 0
+            while (hook = @hook_onces[hook_name].shift)
+              block.call hook
+              num_ran += 1
+            end
+            num_ran
+          end
+        end
       end
     end
 

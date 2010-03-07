@@ -1,8 +1,13 @@
 module Hipe
   module Parsie
     class ConcatParse
+
       include NonterminalParsey, NonterminalInspecty, StrictOkAndDone,
         FaileyMcFailerson
+
+      extend Hookey
+      has_hook_once :after_take!
+
       attr_reader :parse_id # make sure this is set in constructor
       attr_accessor :children, :final_offset, :satisfied_offset
 
@@ -18,18 +23,22 @@ module Hipe
         @zero_width = production.zero_width?
         @satisfied_offset = production.satisfied_offset
         @final_offset = production.final_offset
+
         locks_init
       end
-      
+
       def zero_width?; @zero_width end
 
       def build_children!
         prod_childs = production.children
-        ctxt = parse_context
         @children = AryExt[Array.new(prod_childs.size)]
         build_next_children_and_evaluate!
       end
-      
+
+      def build_empty_children!
+        @children = AryExt[Array.new(production.children.size)]
+      end
+
       def build_next_children_and_evaluate!
         if 0 == @children.length
           @start_offset = false
@@ -41,7 +50,7 @@ module Hipe
           if (@start_offset>@final_offset)
             @done = true
           else
-            @done = false          
+            @done = false
             (@start_offset..@children.length-1).each do |idx|
               @current << idx
               break if @zero_width_map[idx] == false
@@ -52,15 +61,14 @@ module Hipe
             @children[@satisfied_offset].ok?
         end
       end
-      
+
       # @todo i don't know how we should take done etc into acct
       def expecting
-        # we can't say 'no more input' here b/c etc        
         resp = (@done && @ok) ? [] :
           current_children.map(&:expecting).flatten.uniq
         resp
       end
-      
+
       def current_children
         @current.map{|idx| @children[idx]}
       end
@@ -70,19 +78,22 @@ module Hipe
         ctxt = parse_context
         @current.each do |idx|
           if (@children[idx].nil?)
-            @children[idx] = prod[idx].build_parse ctxt            
+            @children[idx] = prod[idx].build_parse ctxt
+            if @children[idx].respond_to? :parent_idx=
+              @children[idx].parent_idx = idx
+            end
           else
             puts("child was already there") if Debug.true?
           end
         end
         nil
       end
-      
+
       # per note9 we only return the first interested child
       def wanter_index_and_response token
         wanter = false
         child_resp = nil
-        wanter_idx = nil        
+        wanter_idx = nil
         look_lockout do
           @current.each do |idx|
             child = @children[idx]
@@ -100,9 +111,9 @@ module Hipe
           [nil, nil]
         end
       end
-      
+
       class Decision < Struct.new(:ok, :done, :want)
-        include Misc # desc_bool
+        include Decisioney, Misc # desc_bool
         def response
           ok_bit   = ok ? SATISFIED : 0
           open_bit = done ? 0 : OPEN
@@ -115,10 +126,14 @@ module Hipe
           "("<<(them.map{|x| desc_bool(x)}*',')<<")"
         end
       end
-      
+
       def look token
         puts "#{inspct_tiny}.look #{token.inspect}.." if Debug.look?
-        @last_look = token
+        look_decision(token).response
+      end
+
+      def look_decision(token)
+        @last_look = token # just for debugging
         decision = Decision.new
         wanter_idx, child_resp = wanter_index_and_response token
         if ! wanter_idx
@@ -126,8 +141,8 @@ module Hipe
           decision.done = @done
           decision.want = false
         else
-          # we would ajust our offset based on whether or not 
-          # the interested child would still be open            
+          # we would ajust our offset based on whether or not
+          # the interested child would still be open
           child_still_open = (0 != OPEN & child_resp)
           hypothetic_next_index = wanter_idx + 1
           i_am_done = hypothetic_next_index >= @final_offset
@@ -141,13 +156,13 @@ module Hipe
             decision.inspct_tiny
           )
         end
-        decision.response
+        decision
       end
-      
+
       def take! token
         puts "#{inspct_tiny}.take! #{token.inspect}" if Debug.true?
         @last_take = token
-        wanter_idx, child_resp = wanter_index_and_response token        
+        wanter_idx, child_resp = wanter_index_and_response token
         no("never") unless wanter_idx # there are lockouts and stuff
         child_resp = nil
         take_lockout do
@@ -162,13 +177,26 @@ module Hipe
           puts( "#{inspct_tiny}.take! #{token.inspect} was: "<<
             " #{decision.inspct_tiny}")
         end
+        run_hook_onces_after_take! do |hook|
+          hook.call self, decision, token
+        end
         decision.response
       end
-      
+
       def inspct_extra(ll,ctx,opts)
         inspct_attr(ll,%w(@current @start_offset @last_look))
       end
-      
+
+      def _unparse arr
+        no("no unparse if not ok") unless @ok
+        idxs = (0..@start_offset).map
+        idxs.each do |idx|
+          next unless @children[idx]
+          @children[idx]._unparse arr
+        end
+        nil
+      end
+
       def tree
         no("no asking for tree if not ok") unless @ok
         return @tree if (@done && @tree)
@@ -176,7 +204,7 @@ module Hipe
         tree_val = AryExt[Array.new(@children.size)]
         if false==@start_offset
           no("no") unless tree_val.size == 0
-        else        
+        else
           (0..@start_offset).each do |idx|
             child = @children[idx]
             if child.nil?
@@ -190,7 +218,11 @@ module Hipe
         tree = ParseTree.new(:concat, symbol_name, @production_id, tree_val)
         @tree = tree if @done
         tree
-      end          
+      end
+
+      # hacks to let visitors in
+      def _start_offset; @start_offset end
+      def _start_offset_hack= offset; @start_offset = offset end
     end
   end
-end    
+end

@@ -18,16 +18,28 @@ module Hipe
       end
     end
 
+    module ParseTestAssertions
+      attr_accessor :test_context
+      def must_fail expected_msg
+        failed?.must_equal true
+        fail = self.fail
+        test_context.assert_kind_of ParseFail, fail
+        desc = fail.describe
+        desc.must_equal expected_msg
+      end
+    end
+
+    [StringParse, RegexpParse, UnionParse, ConcatParse].each do |x|
+      x.send(:include, ParseTestAssertions)
+    end
+
     class Cfg
       attr_accessor :test_context
       def must_fail input_string, expected_msg
         grammar = self
         parse = grammar.parse! input_string
-        parse.failed?.must_equal true
-        fail = parse.fail
-        test_context.assert_kind_of ParseFail, fail
-        desc = fail.describe
-        desc.must_equal expected_msg
+        parse.test_context = test_context
+        parse.must_fail expected_msg
       end
       def satisfied_and_final_offset_must_be sat, final
         parse = build_start_parse

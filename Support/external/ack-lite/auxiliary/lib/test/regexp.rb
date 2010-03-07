@@ -34,8 +34,7 @@ module Hipe::Parsie
     end
 
     it "should fail when there's still more input (4)" do
-      short_grammar.must_fail(
-        "foo\nbar",
+      short_grammar.parse!("foo\nbar").must_fail(
         "expecting no more input near \"bar\""
       )
     end

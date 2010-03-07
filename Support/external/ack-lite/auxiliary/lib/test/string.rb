@@ -32,8 +32,7 @@ module Hipe::Parsie
     end
 
     it "should fail when there's still more input (4)" do
-      @g.must_fail(
-        "foo\nbar",
+      @g.parse!("foo\nbar").must_fail(
         "expecting no more input near \"bar\""
       )
     end

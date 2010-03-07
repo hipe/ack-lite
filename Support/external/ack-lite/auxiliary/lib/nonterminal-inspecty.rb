@@ -1,5 +1,23 @@
 module Hipe
   module Parsie
+
+    class InspectContext
+      attr_reader :indent, :visited
+      def initialize
+        @level = 0
+        @indent = ''
+        @visited = Setesque.new('visited')
+      end
+      def indent_indent!
+        @level += 1
+        @indent = ('    ' * @level)
+      end
+      def dedent_indent!
+        @level -= 1
+        @indent = ('    ' * @level)
+      end
+    end
+
     module NonterminalInspecty
       include Inspecty
       def inspct_extra ll, ctx, opts
@@ -12,8 +30,7 @@ module Hipe
           ctx.visited.register parse_id, nil
         end
         ind = ctx.indent.dup
-        ctx.indent_indent!
-        if false && opts[:word]
+        if opts[:word]
           return "#<again##{@parse_id}>"
         end
         a = opts[:visited] ? '(again:)' : ''
@@ -35,7 +52,9 @@ module Hipe
         l << (ll*",\n #{ind}")
         if @children.respond_to? :size
           l << " #{ind}@children(#{ch.size})="
+          ctx.indent_indent!
           _inspct_children(l,ind,ctx,opts)
+          ctx.dedent_indent!
         else
           inspct_attr(l, '@children',ind)
         end
@@ -47,7 +66,7 @@ module Hipe
         return @children.inspect unless @children
         last = @children.length - 1
         @children.each_with_index do |c,i|
-          ss = c ? c.inspct(ctx, opts) : c.inspect
+          ss = c.respond_to?(:inspct) ? c.inspct(ctx, opts) : c.inspect
           if (i==0)
             s = ("  #{my_ind}["<<ss)
           else

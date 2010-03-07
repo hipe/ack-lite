@@ -96,7 +96,7 @@ module Hipe
       end
       def nonterminal_common_build_parse ctxt, parse_class
         if @making_this_parser
-          rslt = ParseReference.new @making_this_parser
+          rslt = RecursiveReference.new @making_this_parser
         else
           parser = parse_class.new self, ctxt #note2
           @making_this_parser = parser

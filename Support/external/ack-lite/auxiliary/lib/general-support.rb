@@ -13,17 +13,6 @@ module Hipe
       end
     end
 
-    class InspectContext
-      attr_reader :indent, :visited
-      def initialize
-        @indent = ''
-        @visited = Setesque.new('visited')
-      end
-      def indent_indent!
-        @indent << '    '
-      end
-    end
-
     module AryExt
       def self.[] ary
         ary.extend self
@@ -31,7 +20,7 @@ module Hipe
       def insp
         c = InspectContext.new
         each do |x|
-          x.respond_to?(:inspct) ? puts(x.inspct(c)) : puts(x.inspect)
+          x.respond_to?(:inspct) ? puts(x.inspct(c,{})) : puts(x.inspect)
         end
         'done.'
       end
@@ -104,6 +93,12 @@ module Hipe
       end
       def insp; @children.insp; 'done.' end
       def size; @children.size end
+      def replace!(idx, value)
+        no("no such index to replace: #{idx}") unless idx < @children.length
+        old = @children[idx]
+        @children[idx] = value
+        old
+      end
     end
 
     module UserFailey

@@ -18,6 +18,10 @@ module Hipe
       def symbol_name
         production.symbol_name
       end
+      def unparse
+        _unparse(rslt = [])
+        rslt
+      end
       def locks_init
         @lock = {
           :ok?   => false,
@@ -30,7 +34,11 @@ module Hipe
       def doneing?; @lock[:done?] end
       def oking?;   @lock[:ok?] end
       def look_lockout &block
-        no("#{inspct_tiny} can't look when done") if done?
+        if done?
+          puts "\n\n\nWON'T LOOK WHEN DONE--CHECK IT OUT\n\n"
+          debugger; 'x'
+          # no("#{inspct_tiny} can't look when done")
+        end
         common_lockout :look, &block
       end
       def take_lockout &block
@@ -44,12 +52,14 @@ module Hipe
         common_lockout :ok?, &block
       end
       def common_lockout type, &block
-        types =
         wip_name = "wip_#{type}".to_sym # :wip_ok? :wip_done? :wip_look
         throw wip_name, {:pid=>parse_id} if @lock[type]
         @lock[type] = true
         wip = catch(wip_name) do
-          yield # this may throw from self as child, depending on how we
+          yield
+          # a 'wip' means a work in progress, when a 'wip' is thrown
+          # it means a recursive node is trying to visit itself.
+          # this may throw from self as child, depending on how we
           # choose to implement this.  In the client code (i.e. anywhwere
           # other than here) client should catch wips originating
           # from self (or target) and take appropriate measures.  Here we
@@ -61,7 +71,7 @@ module Hipe
         end
         if wip
           @lock[type] = false if (wip && wip[:pid]!=parse_id)
-          throw wip
+          throw wip_name, wip
         end
         @lock[type] = false
         nil

@@ -27,9 +27,10 @@ module Hipe
           pf = nil
         end
         parse.fail = pf if pf
+        # sux
+        parse.test_context = test_context if parse.respond_to? :test_context=
         parse
       end
-
     end
 
 

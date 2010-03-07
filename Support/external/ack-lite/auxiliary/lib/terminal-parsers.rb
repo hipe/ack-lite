@@ -48,6 +48,11 @@ module Hipe
           end
         @value_tree
       end
+      def _unparse arr
+        no("no") unless @ok
+        arr << @string
+        nil
+      end
     end
 
     class RegexpParse
@@ -78,6 +83,11 @@ module Hipe
       end
       def inspct _,o=nil;
         inspect
+      end
+      def _unparse arr
+        no("no") unless @ok
+        arr << @matches[0]
+        nil
       end
       def tree
         return @tree unless @tree.nil?
