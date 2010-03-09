@@ -222,7 +222,7 @@ module Hipe
 
       # hacks to let visitors in
       def _start_offset; @start_offset end
-      def _start_offset_hack= offset; @start_offset = offset end
+      def _start_offset= offset; @start_offset = offset end
     end
   end
 end

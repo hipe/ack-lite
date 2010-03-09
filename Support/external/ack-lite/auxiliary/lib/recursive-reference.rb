@@ -61,6 +61,8 @@ module Hipe
       def done?; true end
     end
 
+    CONCAT_INCREMENT = 1  # just to keep track of where we are using
+
     class Reference
       include Misc
       attr_accessor :parent_idx
@@ -88,7 +90,7 @@ module Hipe
       # this might as well be a class method -- don't refer to
       # any instance variables here
       #
-      def child_swapout src_parent, src_idx, tgt_parent, tgt_idx
+      def swapout_child src_parent, src_idx, tgt_parent, tgt_idx
         stolen = src_parent.children[src_idx]
         no('no') unless stolen
         displaced = tgt_parent.children[tgt_idx]
@@ -100,7 +102,18 @@ module Hipe
       end
 
       #
-      # this is hackisly always called with that first recursive reference
+      # put the new child in the old spot,
+      # @return what was previously there (must be not nil)
+      #
+      def replace_child src_parent, src_idx, new_child
+        old = src_parent.children[src_idx]
+        no('no') unless old
+        src_parent.children[src_idx] = new_child
+        old
+      end
+
+      #
+      # this is hackishly always called with that first recursive reference
       # as the receiver, so we always have a handle on the base union,
       # from which the tree grows down.
       # the union itself is never swapped out (it is root node in tests)
@@ -111,10 +124,10 @@ module Hipe
         new_one.build_empty_children!
         reference = Reference.new concat
         new_one.children[parent_idx] = reference
-        new_one._start_offset_hack = parent_idx + 1
+        new_one._start_offset = parent_idx + CONCAT_INCREMENT
         new_one.build_next_children_and_evaluate!
         new_one.hook_once_after_take! do |*args|
-          utterly_insane_hook(*args)
+          step_4_after_concat_take!(*args)
         end
         new_one
       end
@@ -125,26 +138,51 @@ module Hipe
       # another concat node.  It needs to collapse the reference it has
       # (and steal the referrant)
       #
-      def utterly_insane_hook concat_rt, decision, token
-        no("we take this as a given") unless target.kind_of? UnionParse
-        no("just fix this. easy") unless target._in_the_running == [1]
+      def step_4_after_concat_take! concat, decision, token
+        union = root_union; step_4_assertions root_union, concat
+        ref = swapout_child union, idx_in_union, concat, idx_in_concat
+        ref.make_tombstone!(concat.parse_id)
+        junk_sym = swapout_child union, steal_idx, union, idx_in_union
+        new_concat = utter_insanity_concat concat
+        symbol = replace_child union, steal_idx, new_concat
+        no('no') unless symbol.kind_of? Symbol
+        union.hook_once_after_take! do |_, decision, token|
+          replace_decision_indexes decision, steal_idx, idx_in_union
+          no("no") if decision.idxs_open.include? steal_idx
+          decision.idxs_open.push steal_idx
+        end
+      end
+
+      #
+      # this is where the hackey magic begins.  build new nodes
+      # this is similar to logic elsewhere
+      #
+      def step_4_initial_after_concat_take! concat, decision, token
+        union = root_union
+        new_concat = utter_insanity_concat concat
+        stolen = replace_child union, steal_idx, new_concat
+        me = replace_child concat, idx_in_concat, stolen
+        no('no') unless me.my_parse_id == my_parse_id
+        # never see me again (actually i may live on infinitely)
+        make_tombstone!
+        no('no') if union._in_the_running.include? steal_idx
+        union._in_the_running << steal_idx
+        union._done = false
+        union.hook_once_after_take! do |*args|
+          step_5_initial_after_union_take!(*args)
+        end
+      end
+
+
+
+
+      def step_4_assertions union, concat_rt
+        no("just fix this. easy") unless union._in_the_running == [1]
         no("wuh happuh?") unless
           concat_rt.children[idx_in_concat].kind_of? Reference
         no("wuh happuh?") unless
-          target.children[idx_in_union].parse_id ==
+          union.children[idx_in_union].parse_id ==
             concat_rt.children[idx_in_concat].target_parse_id
-        right_idx = idx_in_union + 1
-        ref = child_swapout target, idx_in_union, concat_rt, idx_in_concat
-        ref.make_tombstone!(concat_rt.parse_id)
-        junk_sym = child_swapout target, right_idx, target, idx_in_union
-        new_one = utter_insanity_concat concat_rt
-        target.hook_once_after_take! do |_, decision, token|
-          replace_decision_indexes decision, right_idx, idx_in_union
-          # remove_decision_indexes decision, right_idx
-          no("no") if decision.idxs_open.include? right_idx
-          decision.idxs_open.push right_idx
-        end
-        target.children[idx_in_union+1] = new_one
       end
 
       #
@@ -209,6 +247,12 @@ module Hipe
         @idx_in_union
       end
 
+      def root_union
+        union = target
+        no('no') unless union.kind_of?(UnionParse)
+        union
+      end
+
       def idx_in_union= idx
         no("no") if @idx_in_union && @idx_in_union != idx
         @idx_in_union = idx
@@ -242,7 +286,7 @@ module Hipe
       # references, but not vanilla references.
       #
       def look token
-        if @look_hack
+        if @look_hack # this is step 1
           no("never")
           look_hack = @look_hack
           @look_hack = nil
@@ -251,7 +295,7 @@ module Hipe
           throw :wip_look, {
             :pid => target_parse_id,
             :callback => lambda{|*args|
-              look_again(*args)
+              step_2_look_again(*args)
             }
           }
         end
@@ -264,19 +308,54 @@ module Hipe
       # aren't supposed to cause state changes.  This one does, guaranteed
       # to cause bugs
       #
-      def look_again union, decision, idx, token
+      def step_2_look_again union, decision, idx, token
         self.idx_in_union = idx
         no("logical fallacy") if @look_hack
-        if ! union.ok?
+        if ! union.ok? # not sure about this step,
+          # do we stay open indefinitely until the union without us
+          # is ok? should we be looking at decision instead?
           no("logical fallacy") if decision.idxs_open.include?(idx)
           decision.idxs_open << idx
         else
+          # we're calling this step 3?
           store_steal_idx union
-          parent = union.children[idx]
-          hack_parent_if_necessary parent
+          parent_concat = union.children[idx]
+          step_3_hack_parent_concat_if_necessary parent_concat, token
           @look_hack = :NEVER
-          dec = parent.look_decision(token)
+          dec = parent_concat.look_decision(token)
           decision.merge_in_response! dec.response, idx
+        end
+      end
+
+
+      #
+      # pre: your target union is ok (before even looking at the curr. tok.)
+      # effectively tell the concat that its first child (the reference) is ok
+      # by moving its starting offset over one, and hooking into its take
+      #
+      def step_3_hack_parent_concat_if_necessary parent, token
+        assert_hackable parent
+        so = parent._start_offset
+        parent._start_offset = so + CONCAT_INCREMENT
+        parent.build_next_children_and_evaluate!
+        no('needs testing') if parent.done?
+        parent.hook_once_after_take! do |*args|
+          step_4_initial_after_concat_take!(*args)
+        end
+      end
+
+      def assert_hackable concat
+        no('no') if false == idx_in_concat
+        no('no') unless concat.kind_of? ConcatParse
+        so = concat._start_offset
+        if so < idx_in_concat
+          no('no')
+        elsif so > idx_in_concat
+          debugger ; 'probably ok just to return'
+          no('no')
+        else
+          no('no') unless
+            concat.children[idx_in_concat].my_parse_id == my_parse_id
         end
       end
 
@@ -297,17 +376,20 @@ module Hipe
       # this is where the hackey magic begins.  build new nodes
       # this is similar to logic elsewhere
       #
-      def after_take! concat, decision, token
-        tgt = target
-        stolen = tgt.children[steal_idx]
-        tgt.children[steal_idx] = utter_insanity_concat concat
-        no('no') if tgt._in_the_running.include? steal_idx
-        tgt._in_the_running << steal_idx
-        tgt._done = false
-        concat.children[idx_in_concat] = stolen # my spot -- you may
+      def step_4_initial_after_concat_take! concat, decision, token
+        union = root_union
+        new_concat = utter_insanity_concat concat
+        stolen = replace_child union, steal_idx, new_concat
+        me = replace_child concat, idx_in_concat, stolen
+        no('no') unless me.my_parse_id == my_parse_id
         # never see me again (actually i may live on infinitely)
         make_tombstone!
-        tgt.hook_once_after_take!{ |*args| after_union_take!(*args) }
+        no('no') if union._in_the_running.include? steal_idx
+        union._in_the_running << steal_idx
+        union._done = false
+        union.hook_once_after_take! do |*args|
+          step_5_initial_after_union_take!(*args)
+        end
       end
 
       #
@@ -316,31 +398,13 @@ module Hipe
       # to see a clear picture of the decision as it stands and the decision
       # as it should stand.
       #
-      def after_union_take! union, take, token
-        no('no') if take.idxs_open.include? idx_in_union
-        take.idxs_open << steal_idx
-      end
-
-      #
-      # pre: your target union is ok (before even looking at the curr. tok.)
-      # effectively tell the concat that its first child (the reference) is ok
-      # by moving its starting offset over one, and hooking into its take
-      #
-      def hack_parent_if_necessary parent
-        no('no') if false == idx_in_concat
-        no('no') unless parent.kind_of? ConcatParse
-        so = parent._start_offset
-        if so < idx_in_concat
-          no('no')
-        elsif so > idx_in_concat
-          debugger ; 'probably ok just to return'
+      def step_5_initial_after_union_take! union, take, token
+        if take.idxs_open.include? idx_in_union
+          # this occurs in page43 grammar
+          debugger; "FIX ME? or not"
+          # no('no')
         else
-          no('no') unless
-            parent.children[idx_in_concat].my_parse_id == my_parse_id
-          parent._start_offset_hack = so+1
-          parent.build_next_children_and_evaluate!
-          no('needs testing') if parent.done?
-          parent.hook_once_after_take!{ |*args| after_take!(*args) }
+           take.idxs_open << steal_idx
         end
       end
     end
