@@ -76,7 +76,18 @@ module Hipe
         @lock[type] = false
         nil
       end
-    end
+      def index_of_child child
+        found = false
+        @children.each_with_index do |c,i|
+          if c == child
+            found = i
+            break;
+          end
+        end
+        no("child not found") unless found
+        found
+      end
+    end # end module
   end
 end
 

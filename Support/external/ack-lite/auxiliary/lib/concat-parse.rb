@@ -3,10 +3,10 @@ module Hipe
     class ConcatParse
 
       include NonterminalParsey, NonterminalInspecty, StrictOkAndDone,
-        FaileyMcFailerson
+        FaileyMcFailerson, Childable
 
       extend Hookey
-      has_hook_once :after_take!
+      has_hook_once :when_becomes_ok
 
       attr_reader :parse_id # make sure this is set in constructor
       attr_accessor :children, :final_offset, :satisfied_offset
@@ -23,23 +23,44 @@ module Hipe
         @zero_width = production.zero_width?
         @satisfied_offset = production.satisfied_offset
         @final_offset = production.final_offset
-
         locks_init
+      end
+
+      # private
+      def reset!
+        @parent_id = nil
+        @done = @ok = nil
+        @currrent = []
+        @children.each_with_index do |c, i|
+          next if c.nil?
+          if c.kind_of? Reference
+            c.to_tombstone!
+            @children[i] = nil
+          else
+            c.reset!
+          end
+        end
+      end
+
+      def release!
+        reset!
+        production.release_this_resetted_parse self
       end
 
       def zero_width?; @zero_width end
 
-      def build_children!
+      def build_children! opts={}
         prod_childs = production.children
         @children = AryExt[Array.new(prod_childs.size)]
-        build_next_children_and_evaluate!
+        build_next_children_and_evaluate! opts
+        @prev_ok = @ok
       end
 
       def build_empty_children!
         @children = AryExt[Array.new(production.children.size)]
       end
 
-      def build_next_children_and_evaluate!
+      def build_next_children_and_evaluate! opts={}
         if 0 == @children.length
           @start_offset = false
           @done = true
@@ -55,7 +76,7 @@ module Hipe
               @current << idx
               break if @zero_width_map[idx] == false
             end
-            build_current!
+            build_current! opts
           end
           @ok = (@start_offset >= @satisfied_offset) &&
             @children[@satisfied_offset].ok?
@@ -73,15 +94,13 @@ module Hipe
         @current.map{|idx| @children[idx]}
       end
 
-      def build_current!
+      def build_current! opts={}
         prod = production.children
         ctxt = parse_context
         @current.each do |idx|
           if (@children[idx].nil?)
-            @children[idx] = prod[idx].build_parse ctxt
-            if @children[idx].respond_to? :parent_idx=
-              @children[idx].parent_idx = idx
-            end
+            @children[idx] = prod[idx].build_parse ctxt, opts
+            @children[idx].parent_id = parse_id
           else
             puts("child was already there") if Debug.true?
           end
@@ -120,6 +139,9 @@ module Hipe
           want_bit = want ? WANTS : 0
           return want_bit | ok_bit | open_bit
         end
+        alias_method :ok?, :ok
+        alias_method :done?, :done
+        alias_method :want?, :want
         def inspct_tiny
           them = %w(ok done)
           them << 'want' unless want.nil?
@@ -135,7 +157,7 @@ module Hipe
       def look_decision(token)
         @last_look = token # just for debugging
         decision = Decision.new
-        wanter_idx, child_resp = wanter_index_and_response token
+        wanter_idx, child_resp = wanter_index_and_response(token)
         if ! wanter_idx
           decision.ok = @ok
           decision.done = @done
@@ -162,7 +184,7 @@ module Hipe
       def take! token
         puts "#{inspct_tiny}.take! #{token.inspect}" if Debug.true?
         @last_take = token
-        wanter_idx, child_resp = wanter_index_and_response token
+        wanter_idx, child_resp = wanter_index_and_response(token)
         no("never") unless wanter_idx # there are lockouts and stuff
         child_resp = nil
         take_lockout do
@@ -174,11 +196,15 @@ module Hipe
         build_next_children_and_evaluate!
         decision = Decision.new(@ok, @done)
         if Debug.true?
-          puts( "#{inspct_tiny}.take! #{token.inspect} was: "<<
+          puts( "#{inspct_tiny}.take! #{token.inspect} BEFORE HOOKS was: "<<
             " #{decision.inspct_tiny}")
         end
-        run_hook_onces_after_take! do |hook|
-          hook.call self, decision, token
+
+        if decision.ok? && ! @prev_ok
+          @prev_ok = true
+          run_hook_onces_when_becomes_ok do |hook|
+            hook.call self, decision, token
+          end
         end
         decision.response
       end

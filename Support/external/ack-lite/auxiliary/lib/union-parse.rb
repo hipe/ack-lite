@@ -3,11 +3,11 @@ module Hipe
     class UnionParse
 
       include NonterminalParsey, NonterminalInspecty, FaileyMcFailerson,
-        StrictOkAndDone
+        StrictOkAndDone, Childable
 
       extend Hookey
 
-      has_hook_once :after_take!
+      has_hook_once :after_union_take!
 
       attr_reader :parse_id # make sure this is set in constructor
       attr_reader :children # debug gin
@@ -23,12 +23,22 @@ module Hipe
         @in_the_running = false
       end
 
-      def build_children!
+      def build_children! opts={}
         context = parse_context
-        @children = production.children.map do |sym|
-          sym.build_parse context
+        children_productions = production.children
+        @children = AryExt[Array.new]
+        children_productions.each_with_index do |child_production,idx|
+          child = nil
+          if opts[:child_hook]
+            child = opts[:child_hook].call(self, child_production, idx, opts)
+          else
+            child = child_production.build_parse(context)
+          end
+          if :skip_child != child
+            child.parent_id = parse_id
+            @children << child
+          end
         end
-        AryExt[@children]
         @in_the_running = (0..@children.length-1).map
         decided! Decision.based_on(in_the_running)
       end
@@ -37,13 +47,29 @@ module Hipe
       class Decision < Struct.new(:idxs_want, :idxs_satisfied,
         :idxs_open, :idxs_closed);
 
+        class << self
+          def main_props
+            %w(idxs_open idxs_satisfied idxs_want idxs_closed)
+          end
+        end
+
         include Decisioney, Misc # desc_bool
+
+        def initialize
+          self.idxs_open = []
+          self.idxs_satisfied = []
+          self.idxs_want = []
+          self.idxs_closed = []
+          @responses_ive_seen = {}
+        end
 
         def self.based_on list, &block
           return self.based_on_using(list, &block) if block_given?
           decision = Decision.new
           list.each do |(child, idx)|
             if child.done?
+              puts "#{$token} adding this index to idx closed: #{idx}" if
+                Debug.true?
               decision.idxs_closed << idx
             else
               decision.idxs_open << idx
@@ -55,24 +81,36 @@ module Hipe
           decision
         end
 
-        def initialize
-          self.idxs_open = []
-          self.idxs_satisfied = []
-          self.idxs_want = []
-          self.idxs_closed = []
-        end
-
         def self.based_on_using list, &block
           decision = Decision.new
           list.each do |(child, idx)|
             resp = block.call child, idx
             next if resp == :skip
-            decision.merge_in_response! resp, idx
+            decision.add_response! resp, idx
           end
           decision
         end
 
-        def merge_in_response! resp, idx
+        def deep_dup
+          # marshal load didn't like what we did to the constructor
+          response = self.class.new
+          self.class.main_props.each do |x|
+            response.send("#{x}=",self.send(x).dup)
+          end
+          response
+        end
+
+        def deep_freeze!
+          self.class.main_props.each do |x|
+            self.send(x).freeze
+          end
+          freeze
+          self
+        end
+
+        def add_response! resp, idx
+          no("already seen respnose for #{idx}") if @responses_ive_seen[idx]
+          @responses_ive_seen[idx] = true
           if 0 != OPEN & resp
             idxs_open << idx
           else
@@ -85,10 +123,6 @@ module Hipe
             idxs_want << idx
           end
           nil
-        end
-
-        def idx_done_and_ok
-          self.idxs_satisfied & self.idxs_closed
         end
 
         def done?
@@ -119,7 +153,7 @@ module Hipe
       end
 
       def decided! decision
-        @in_the_running -= decision.idxs_closed
+        @in_the_running = decision.idxs_open.dup
         @ok = decision.ok?
         @done = decision.done?
       end
@@ -132,31 +166,29 @@ module Hipe
 
       def look_decision token
         puts "#{inspct_tiny}.look_decision #{token.inspect}.." if Debug.look?
-        decision = nil
+        decision = Decision.new
         wips = []
         look_lockout do
-          decision = Decision.based_on(in_the_running) do |child,idx|
+          @in_the_running.each do |idx|
+            child = @children[idx]
             child_resp = nil
-            my_resp = nil
             wip = catch :wip_look do
               child_resp = child.look token
               nil
             end
             if wip
-              if wip[:pid] != @parse_id
-                not_my_wip
-              else
-                wips << [wip,idx]
-                my_resp = :skip
-              end
+              not_my_wip if wip[:pid] != @parse_id
+              wips << [wip,idx]
             else
-              my_resp = child_resp
+              decision.add_response! child_resp, idx
             end
-            my_resp
           end
         end
+        if wips.any?
+          frozen_decision = decision.deep_dup.deep_freeze!
+        end
         wips.each do |(wip,idx)|
-          wip[:callback].call self, decision, idx, token
+          wip[:callback].call self, frozen_decision, decision, idx, token
         end
         if Debug.look?
           puts("#{inspct_tiny}.look_decision on #{token.inspect} was: "<<
@@ -173,20 +205,17 @@ module Hipe
       def take! token
         look = look_decision token
         no("won't take when don't want") unless look.want?
-        take = nil
-        wants = slice look.idxs_want
-        @in_the_running = look.idxs_want | look.idxs_open
+        take = Decision.new
         take_lockout do
-          take = Decision.based_on(wants) do |child,idx|
-            child.take! token
+          look.idxs_want.each do |idx|
+            child = @children[idx]
+            child_resp = child.take! token
+            take.add_response! child_resp, idx
           end
         end
-        take.idxs_open |= look.idxs_open
-
-        run_hook_onces_after_take! do |block|
+        run_hook_onces_after_union_take! do |block|
           block.call(self, take, token)
         end
-
         decided! take
         take.response
       end
@@ -234,10 +263,15 @@ module Hipe
       # @todo the below should take into account in the running!
       def expecting
         resp = []
-        @children.each_with_index do |c,i|
-          resp += c.expecting
+        @in_the_running.each do |idx|
+          resp += @children[idx].expecting
         end
         resp
+        # resp = []
+        # @children.each_with_index do |c,i|
+        #   resp += c.expecting
+        # end
+        # resp
       end
 
       # unlike concat trees, a union tree selects its one winner and uses the
@@ -271,10 +305,13 @@ module Hipe
           end
         end
         fail_msg = nil
-        if terminals.size > 0
-          if  non_empty_non_terminals.size > 0
-            fail_msg = "Had more than one terminal and more than one " <<
-            "non-empty non-terminal"
+        if terminals.size >= 1
+          tsize = terminals.size
+          if  non_empty_non_terminals.size > 1
+            ntsize = non_empty_non_terminals.size
+            fail_msg = "Had more than one terminal (#{tsize}) "<<
+              " and more than one " <<
+              "non-empty non-terminal (#{ntsize})"
           else
             return winners[terminals.first]
           end
@@ -284,13 +321,42 @@ module Hipe
           elsif non_empty_non_terminals.size == 1
             return winners[non_empty_non_terminals.first]
           else
-            fail_msg = "huh?"
+            fail_msg = "i don't know what to do here."
           end
         end
         $po = self
-        full_fail_msg = "ambiguous parse tree - #{fail_msg}. "<<
+        full_fail_msg =
+          "#{inspct_tiny} had ambiguous parse tree - #{fail_msg}. "<<
           "Parse object set to $po"
         raise ParseFail.new(full_fail_msg)
+      end
+
+      def indexes_not_ok
+        children.to_enum.with_index.map{|c,i| i unless c.ok?}.compact
+      end
+
+      #
+      # how/where this is invoked and what it means is experimental
+      #
+      #
+      def prune! opts
+        these = []
+        @children.each_with_index do |c, i|
+          next if @in_the_running.include?(i)
+          these.push(i)
+        end
+        @in_the_running = :pruned
+        these.reverse!
+        num = 0
+        these.each do |idx|
+          child = @children[idx]
+          if ! child.kind_of?(Tombstone)
+            child.release!
+          end
+          num += 1
+          @children.delete_at idx
+        end
+        num
       end
 
       # only for hacking by visitors

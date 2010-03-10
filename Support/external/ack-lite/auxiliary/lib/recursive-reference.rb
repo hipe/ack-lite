@@ -4,6 +4,11 @@
 #
 # We try to keep such code to a minimum elsewhere in the thing.
 #
+# My policy on comments is "comment only when necessary to explain a
+# complicated, unconventional or experimental feature.  (Avoid
+# complicated, unconventional or experimental features.)"
+# This file has a lot of comments.
+#
 # RecursiveReference objects are created when, during the parse of a single
 # token, more than one parse object is attempted to be made from the same
 # production rule (during development this was only encountered with
@@ -18,39 +23,30 @@
 # this node cannot yet come to a decision about whether or not it wants the
 # token.
 #
-# So instead it throws a "wip_look", which union parses are supposed to catch,
+# So instead it throws a "wip_look", (wip: work in progress)
+# which union parses are supposed to catch,
 # and the union parse is supposed to continue evaluating its other children.
 # Once the union parse finishes evaluating its non-recursive nodes (nodes
 # that have children that refer to the same production that the union node
 # is,) the union node calls a callback that was in the wip.
 #
-# This callback sees if the union node is satisfied as it is (without having
-# dealt with this recursion.)  If it is, the recursive node knows that it can
-# steal the satisfied child node of the union to make itself satisfied.
+# This callback take the union nodes's state as it would have been
+# without the recursion, and evaluates the state of the concat node.
+# Effectively the concat node blindly evaluates the recursive node
+# not knowing that it is recursively pointing to the actual parent of
+# the concat node.
 #
-# There is ugliness on parsing the second good token, (consider the
-# transformation that needs to occur between the two parse trees)
-# This is what RecursiveReference deals with.
+# Then, when the concat node becomes 'ok', it yeilds to a callback set here
+# that collapses the recursive node (stealing the one satsified child
+# of the union the recursive node pointed to), and maybe sets up a new
+# node (union? concat?) that itself will have a child that points to
+# this concat node.
 #
+# The root union node should be none the wiser because it lost one
+# satisfied child and gained another.
 #
-# At some point, magically thru the use of hooks we end up with one root
-# union node with two concat node children.  the one on the left is
-# built and done, and possibly deep; and the one on the right has two
-# children: the firt child is a reference (plain reference not recursive
-# reference) to the concat node on the left of the union, and its second
-# child (children one day!??) is/are the terminals or non-recursive
-# nodes it nees to fulfill.  once it starts taking tokens to fullfill
-# its right side, it *steals* the left node, moves itself into the left
-# position, and creates a new similar concat node, that itself has the
-# same arrangement, and so on.
+# In this manner the tree is built downward and to the left.
 #
-# in theory this is how the concat node is infinitely growable down
-# and to the left.
-#
-# (There is a lot of hacking of the decision structures of the union)
-#
-# There is logical repetition in this file because it took a while to hook
-# into making this thing itself a recursive algorithm
 
 module Hipe
   module Parsie
@@ -62,18 +58,17 @@ module Hipe
     end
 
     CONCAT_INCREMENT = 1  # just to keep track of where we are using
+    HARD_CODED_THIEVERY = 0 # ditto above
 
     class Reference
-      include Misc
-      attr_accessor :parent_idx
+      include Misc, Childable
       attr_reader :my_parse_id, :target_parse_id
       def initialize target_parse
         @target_parse_id = target_parse.parse_id
         @my_parse_id = Parses.register self
-        @look_hack = nil
-        @parent_idx = false
-        @steal_idx = nil
-        @idx_in_union = nil
+        @cached_decisions = {}
+        # we use the above mainly because the look wip callback mechanism
+        # doesn't happen in union.take just union.look
       end
       def target
         Parses[@target_parse_id]
@@ -81,150 +76,62 @@ module Hipe
       def inspct ctxt, opts
         sprintf("#<Reference%s->%s>", @my_parse_id, @target_parse_id)
       end
-
-      #
-      # gives source child to target parent at the indicated indexes,
-      # leaving a ransom note or tombstone or something
-      # the previous child that used to be at target is returned.
-      # internals of the parent's done-ness is not dealt with
-      # this might as well be a class method -- don't refer to
-      # any instance variables here
-      #
-      def swapout_child src_parent, src_idx, tgt_parent, tgt_idx
-        stolen = src_parent.children[src_idx]
-        no('no') unless stolen
-        displaced = tgt_parent.children[tgt_idx]
-        no('no') unless displaced
-        src_parent.children[src_idx] =
-          %{stolen_by_#{tgt_parent.parse_id}}.to_sym
-        tgt_parent.children[tgt_idx] = stolen
-        displaced
+      def inspct_tiny
+        inspct nil, nil
       end
 
       #
-      # put the new child in the old spot,
+      # When a parse reference is no longer needed (when it is 'collapsed')
+      # we leave a marker here for debugging.  If there are no other
+      # references to the er reference this should in theory release it.
+      #
+      def to_tombstone! opts={}
+        tombstone = Tombstone.build self, opts
+        Parses.replace!(my_parse_id, tombstone)
+        nil
+      end
+
+      #
+      # replace a child with a tombstone.
+      # @return removed child
+      #
+      def remove_child node, idx, opts={}
+        no('no') unless node.children[idx]
+        removed = node.children[idx]
+        removed.unset_parent!
+        tomb = Tombstone.build removed, opts
+        node.children[idx] = tomb
+        removed
+      end
+
+
+      #
+      # put the new child in the spot,
+      # make sure new_child doesn't already have a parent,
       # @return what was previously there (must be not nil)
       #
       def replace_child src_parent, src_idx, new_child
         old = src_parent.children[src_idx]
         no('no') unless old
+        old.unset_parent!
+        new_child.parent_id = src_parent.parse_id
         src_parent.children[src_idx] = new_child
         old
       end
 
+
       #
-      # this is hackishly always called with that first recursive reference
-      # as the receiver, so we always have a handle on the base union,
-      # from which the tree grows down.
-      # the union itself is never swapped out (it is root node in tests)
-      # and the one RecursiveReference just floats around in memory forever.
+      # etc
       #
-      def utter_insanity_concat concat
-        new_one = ConcatParse.new(concat.production,concat.parse_context)
-        new_one.build_empty_children!
-        reference = Reference.new concat
-        new_one.children[parent_idx] = reference
-        new_one._start_offset = parent_idx + CONCAT_INCREMENT
-        new_one.build_next_children_and_evaluate!
-        new_one.hook_once_after_take! do |*args|
-          step_4_after_concat_take!(*args)
-        end
-        new_one
+      def add_child parent_node, child
+        no("clear child's existing parent first") if child.parent?
+        no("really?") unless parent_node.kind_of?(UnionParse)
+        child.parent_id = parent_node.parse_id
+        parent_node.children << child
+        new_idx = parent_node.children.length - 1
+        new_idx
       end
 
-      #
-      # the right concat node has just satisfied its right terminal token
-      # and its left (first) child is a reference to its sibling to the left,
-      # another concat node.  It needs to collapse the reference it has
-      # (and steal the referrant)
-      #
-      def step_4_after_concat_take! concat, decision, token
-        union = root_union; step_4_assertions root_union, concat
-        ref = swapout_child union, idx_in_union, concat, idx_in_concat
-        ref.make_tombstone!(concat.parse_id)
-        junk_sym = swapout_child union, steal_idx, union, idx_in_union
-        new_concat = utter_insanity_concat concat
-        symbol = replace_child union, steal_idx, new_concat
-        no('no') unless symbol.kind_of? Symbol
-        union.hook_once_after_take! do |_, decision, token|
-          replace_decision_indexes decision, steal_idx, idx_in_union
-          no("no") if decision.idxs_open.include? steal_idx
-          decision.idxs_open.push steal_idx
-        end
-      end
-
-      #
-      # this is where the hackey magic begins.  build new nodes
-      # this is similar to logic elsewhere
-      #
-      def step_4_initial_after_concat_take! concat, decision, token
-        union = root_union
-        new_concat = utter_insanity_concat concat
-        stolen = replace_child union, steal_idx, new_concat
-        me = replace_child concat, idx_in_concat, stolen
-        no('no') unless me.my_parse_id == my_parse_id
-        # never see me again (actually i may live on infinitely)
-        make_tombstone!
-        no('no') if union._in_the_running.include? steal_idx
-        union._in_the_running << steal_idx
-        union._done = false
-        union.hook_once_after_take! do |*args|
-          step_5_initial_after_union_take!(*args)
-        end
-      end
-
-
-
-
-      def step_4_assertions union, concat_rt
-        no("just fix this. easy") unless union._in_the_running == [1]
-        no("wuh happuh?") unless
-          concat_rt.children[idx_in_concat].kind_of? Reference
-        no("wuh happuh?") unless
-          union.children[idx_in_union].parse_id ==
-            concat_rt.children[idx_in_concat].target_parse_id
-      end
-
-      #
-      # don't know if we need this
-      #
-      def remove_decision_indexes decision, value
-        %w(idxs_satisfied idxs_open idxs_closed).each do |meth|
-          arr = decision.send(meth)
-          idxs = arr.to_enum.with_index.map do |v,i|
-            i if v == value
-          end.compact
-          idxs.reverse.each{|idx| arr.delete_at(idx) }
-        end
-      end
-
-
-      #
-      # @todo maybe we don't need this after all
-      # since we shuffled nodes around in the union parse, we need to
-      # do the same shuffling to its decision structure
-      #
-      def replace_decision_indexes decision, right_idx, idx_in_union
-        %w(idxs_satisfied idxs_open idxs_closed).each do |meth|
-          decision.send(meth).map! do |idx|
-            if idx == right_idx then idx_in_union
-            elsif idx == idx_in_union then no("no!!!")
-            else idx end
-          end
-        end
-      end
-
-      #
-      # When a parse reference is no longer needed (when it is 'collapsed')
-      # we leave a marker here for debugging.
-      #
-      def make_tombstone!(agent_msg=nil)
-        msg = agent_msg ?
-          ("reference_#{my_parse_id}_to_#{target_parse_id}" <<
-           "_collapsed_by_#{agent_msg}") :
-          ("tombstone_for_reference_#{my_parse_id}_to_#{target_parse_id}")
-        Parses.replace!(my_parse_id, msg.to_sym)
-      end
     end
 
     #
@@ -236,41 +143,18 @@ module Hipe
     # because as they are they will certainly fail for some grammars.
     #
     class RecursiveReference < Reference
-      alias_method :idx_in_concat, :parent_idx
+
       def initialize target_parse
         super
-        return not_union unless target_parse.kind_of? UnionParse
-      end
-
-      def idx_in_union
-        no("no") unless @idx_in_union
-        @idx_in_union
-      end
-
-      def root_union
-        union = target
-        no('no') unless union.kind_of?(UnionParse)
-        union
-      end
-
-      def idx_in_union= idx
-        no("no") if @idx_in_union && @idx_in_union != idx
-        @idx_in_union = idx
-      end
-
-      def steal_idx
-        no("no") unless @steal_idx
-        @steal_idx
-      end
-
-      def steal_idx=foo
-        no('no') if @steal_idx && @steal_idx != foo
-        @steal_idx = foo
-      end
-
-      def not_union
-        no("we need to develop this differently if we ever have "<<
-        "recursive targets other than UnionParse.")
+        if ! target_parse.kind_of?(UnionParse)
+          no("we need to develop this differently if we ever have "<<
+             "recursive targets other than UnionParse. "<<
+             "(#{target_parse.class.inspect})"
+          )
+        end
+        class<<self; self end.send(:define_method, :root_union) do
+          target_parse
+        end
       end
 
       def inspct ctxt, opts
@@ -286,11 +170,8 @@ module Hipe
       # references, but not vanilla references.
       #
       def look token
-        if @look_hack # this is step 1
-          no("never")
-          look_hack = @look_hack
-          @look_hack = nil
-          return look_hack
+        if @cached_decisions[root_union.parse_context.tic]
+          @cached_decisions[root_union.parse_context.tic].response
         else
           throw :wip_look, {
             :pid => target_parse_id,
@@ -302,110 +183,113 @@ module Hipe
       end
 
       #
-      # you know that you could steal children, so take that into account
-      # when your parent concat assesses you.  We want to know, "what would
-      # the concat have said if i had been its satisfied child?".  Looks
-      # aren't supposed to cause state changes.  This one does, guaranteed
-      # to cause bugs
+      # this is being called because you bounced out, because a concat
+      # had a recursive reference.  At this point, the decision reflects
+      # the state without taking recursive references into account
       #
-      def step_2_look_again union, decision, idx, token
-        self.idx_in_union = idx
-        no("logical fallacy") if @look_hack
-        if ! union.ok? # not sure about this step,
-          # do we stay open indefinitely until the union without us
-          # is ok? should we be looking at decision instead?
-          no("logical fallacy") if decision.idxs_open.include?(idx)
-          decision.idxs_open << idx
-        else
-          # we're calling this step 3?
-          store_steal_idx union
-          parent_concat = union.children[idx]
-          step_3_hack_parent_concat_if_necessary parent_concat, token
-          @look_hack = :NEVER
-          dec = parent_concat.look_decision(token)
-          decision.merge_in_response! dec.response, idx
+      # now that you know what the union thinks without having calculated you
+      # (the concat or its child recursive reference), you can ask the concat
+      # what it would have said if it knew that child would give the respone
+      # that the union has given.  (The recursive reference knows it can
+      # steal the winning children from the root union to satisfy itself.)
+      #
+      def step_2_look_again union, frozen_decision, union_decision, idx, token
+        my_parent_concat = self.parent
+        no('no') unless self.root_union == union
+        @cached_decisions[root_union.parse_context.tic] = frozen_decision
+
+        concat_decision = my_parent_concat.look_decision token
+        union_decision.add_response! concat_decision.response, idx
+
+        if ! my_parent_concat.has_any_hook_once_when_becomes_ok
+          size = frozen_decision.idxs_satisfied.size
+          if size == 0
+            # absolutely nothing!?
+          elsif size == 1
+            idx_in_union = frozen_decision.idxs_satisfied.last
+            my_parent_concat.hook_once_when_becomes_ok do |*args|
+              step3_when_ok self, idx_in_union, *args
+            end
+          else
+            no("can't collapse recursive reference -- need exactly "<<
+            "1 and had #{size} winning candidate nodes")
+          end
         end
+        nil
+      end
+
+      def take! foo
+        @cached_decisions[root_union.parse_context.tic].response
+      end
+
+      def ridiculous_new_left_recursive_cparse cparse, ref
+        cparse._start_offset = 0 + CONCAT_INCREMENT
+          # todo we might wanna pass opts below
+        cparse.build_next_children_and_evaluate!
+        cparse.hook_once_when_becomes_ok do |cparse, decision, token|
+          step3_when_ok ref, HARD_CODED_THIEVERY, cparse, decision, token
+        end
+        nil
       end
 
 
       #
-      # pre: your target union is ok (before even looking at the curr. tok.)
-      # effectively tell the concat that its first child (the reference) is ok
-      # by moving its starting offset over one, and hooking into its take
+      # this this is expected to be run at most once per concat object
+      # (will cause bugs... @todo) when it goes from not ok to ok (if ever)
+      # it 'collapses a reference' -- it pops the stolen child off of the root
+      # union and puts it where the reference was
       #
-      def step_3_hack_parent_concat_if_necessary parent, token
-        assert_hackable parent
-        so = parent._start_offset
-        parent._start_offset = so + CONCAT_INCREMENT
-        parent.build_next_children_and_evaluate!
-        no('needs testing') if parent.done?
-        parent.hook_once_after_take! do |*args|
-          step_4_initial_after_concat_take!(*args)
+      def step3_when_ok ref, idx_in_union, concat, decision, token
+        # pop stolen off of root, pop onto concat where reference once was
+        if ! ref.parent? || ref.parent != concat
+          debugger; 'figure this out'
+        end
+        stolen = remove_child root_union, idx_in_union, :signed_by => concat
+        idx_in_concat = ref.index_in_parent
+        refo = replace_child concat, idx_in_concat, stolen
+        no('no') if refo.object_id != ref.object_id
+        refo.parent_id = concat.parse_id
+        refo.to_tombstone!
+        root_union.prune!(:signed_by => concat)
+        refo = nil
+
+        # find all of the children for the union symbol that are left
+        # recursive children, and add them to this union
+        children_productions = root_union.production.children
+        # we need to fake it so that the recursive hook is triggered
+        root_union.production._building_this_parser = root_union
+        idxs_added = []
+        children_productions.each_with_index do |cp,idx|
+          if ! cp.has_children? then next
+          elsif you_got_the_goods_kid(cp)
+            ref = nil
+            cparse = cp.build_parse(
+              root_union.parse_context,
+              :recursive_hook => lambda do |*_|
+                ref = Reference.new concat
+                ref
+              end
+            )
+            ridiculous_new_left_recursive_cparse cparse, ref
+            idxs_added << add_child(root_union, cparse)
+          else
+            no("we have never dealt with this kind of grammar before")
+          end
+        end
+        root_union.production._building_this_parser = nil
+        root_union.hook_once_after_union_take! do |up, take_decision, token|
+          # this makes some assumptions about the beginning state of
+          # the new concat
+          # just to get it in the running
+          take_decision.idxs_open.concat(idxs_added)
         end
       end
 
-      def assert_hackable concat
-        no('no') if false == idx_in_concat
-        no('no') unless concat.kind_of? ConcatParse
-        so = concat._start_offset
-        if so < idx_in_concat
-          no('no')
-        elsif so > idx_in_concat
-          debugger ; 'probably ok just to return'
-          no('no')
-        else
-          no('no') unless
-            concat.children[idx_in_concat].my_parse_id == my_parse_id
-        end
-      end
-
-      #
-      # figure out which child we would steal when the time comes
-      #
-      def store_steal_idx union
-        no("shouldn't do this more than once?") if @steal_idx
-        oks = union.children.map(&:ok?)
-        no("don't have logic for which children to steal of several") unless
-          oks.select{|x| x==true}.size == 1
-        idxs = oks.to_enum.with_index.map{|x,i| i if x}.compact
-        no("no") unless idxs.size == 1
-        self.steal_idx = idxs.pop
-      end
-
-      #
-      # this is where the hackey magic begins.  build new nodes
-      # this is similar to logic elsewhere
-      #
-      def step_4_initial_after_concat_take! concat, decision, token
-        union = root_union
-        new_concat = utter_insanity_concat concat
-        stolen = replace_child union, steal_idx, new_concat
-        me = replace_child concat, idx_in_concat, stolen
-        no('no') unless me.my_parse_id == my_parse_id
-        # never see me again (actually i may live on infinitely)
-        make_tombstone!
-        no('no') if union._in_the_running.include? steal_idx
-        union._in_the_running << steal_idx
-        union._done = false
-        union.hook_once_after_take! do |*args|
-          step_5_initial_after_union_take!(*args)
-        end
-      end
-
-      #
-      # hack the take decision to keep the thing open
-      # put a breakpoint at the beginning and do a $p.insp when u run test 10
-      # to see a clear picture of the decision as it stands and the decision
-      # as it should stand.
-      #
-      def step_5_initial_after_union_take! union, take, token
-        if take.idxs_open.include? idx_in_union
-          # this occurs in page43 grammar
-          debugger; "FIX ME? or not"
-          # no('no')
-        else
-           take.idxs_open << steal_idx
-        end
+      def you_got_the_goods_kid cp
+        cp.kind_of?(ConcatProduction) &&
+          cp.children[0].kind_of?(SymbolReference) &&
+          cp.children[0].target_production.production_id ==
+             root_union.production.production_id
       end
     end
   end

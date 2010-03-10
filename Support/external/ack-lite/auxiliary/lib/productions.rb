@@ -5,6 +5,74 @@ module Hipe
 
     # universal production mixings
 
+    #
+    # Heapy is a dumb experimental thing because we don't want to see our
+    # list of total parser objects (that are or ever were) get long for
+    # whatever dumb reason.  When a parse is done being used (usually because
+    # it is out of the running and not ok, b/c ok parses are usually kept
+    # till the end), it is 'reset' and 'released'.  'reset' usually means
+    # 1) recursively reset the children, 2) set internal counters back to
+    # their beginning state.  'release' means simply that in theory there
+    # are no nodes holding on to this node, and it is available in the 'heap'
+    # of ready, blank parsers.  No attempts are made at checking references,
+    # tho, so this is sure to cause bugs.
+    #
+    # The 'heap' of available blank parses stores them per production id
+    # or with the key :default for the parses that don't (inline strings)
+    #
+    class Heap < Hash
+      @all = {}
+      class << self
+        attr_reader :all
+        def insp; puts inspct end
+        def inspct
+          ic = InspectContext.new
+          ic.indent = '     '
+          s = "#<Heap(all):"
+          all.each do |(k,v)|
+            s2 = "#{Inspecty.class_basename(k)}=>#{v.inspct(ic)}"
+            s2.gsub!(/\n */,"") if (s2.length < 80)
+            s << "\n  #{s2}"
+          end
+          s << ">"
+          s
+        end
+      end
+      def inspct ic
+        s = sprintf("\n    #<Heap<-%s{", Inspecty.class_basename(@class))
+        each do |(k,v)|
+          s << "\n      #{k.inspect}=>["
+          v.each_with_index do |x,k|
+            s << v.inspct(ic)
+          end
+          s << "]"
+        end
+        s << "}>"
+      end
+      def initialize klass
+        @class = klass
+        self.class.all[klass] = self
+        super(){|h,k| h[k] = AryExt[Array.new(0)] }
+      end
+    end
+    module Heapy
+      module InstanceMethods
+        def release parse
+          identifier = parse.production.production_id
+          self.class.heap[identifier].push parse
+        end
+      end
+
+      def self.extended klass
+        return if klass.respond_to? :heap
+        klass.send(:include, InstanceMethods)
+        class << klass
+          attr_accessor :heap
+        end
+        klass.heap = Heap.new(klass)
+      end
+    end
+
     module Productive
       include Misc
       def symbol_name= name;
@@ -20,10 +88,21 @@ module Hipe
         no("don't clobber this") if obj.respond_to? meth
         class<<obj; self end.send(:define_method,meth){val}
       end
+      def building_this_parser; nil end
+      def really_stupid_heapy_terminal_parse_build klass
+        if self.class.heap[:default].any?
+          use_this_one = self.class.heap[:default].pop
+          use_this_onse.send(:initialize, self)
+        else
+          rslt = klass.new self
+        end
+        rslt
+      end
     end
 
     class StringProduction
       include Productive
+      extend Heapy
       attr_accessor :string_literal
       def initialize string
         unless string.kind_of? String
@@ -34,25 +113,28 @@ module Hipe
         end
         @string_literal = string
       end
-      def build_parse ctxt
-        StringParse.new(self)
+      def build_parse ctxt, opts=nil
+        really_stupid_heapy_terminal_parse_build StringParse
       end
       def to_bnf_rhs; @string_literal.inspect end
       def zero_width?; @string_literal == "" end
+      def has_children?; false end
     end
 
     class RegexpProduction
       include Productive
+      extend Heapy
       attr_accessor :re
       def initialize re; @re = re end
-      def build_parse ctxt
-        RegexpParse.new(self)
+      def build_parse ctxt, opts=nil
+        really_stupid_heapy_terminal_parse_build RegexpParse
       end
       # @todo not bnf!
       def to_bnf_rhs;
         @re.inspect
       end
       def zero_width?; !! (@re =~ "") end
+      def has_children?; false end
     end
 
     class SymbolReference
@@ -74,13 +156,16 @@ module Hipe
           throw :ref_fail, {:name=>target_symbol_name}
         end
       end
-      def build_parse ctxt
+      def build_parse ctxt, opts={}
         prod = target_production
-        prod.build_parse ctxt
+        prod.build_parse ctxt, opts
       end
       # we are going to let the implementors handle recursion
       def zero_width?
         target_production.zero_width?
+      end
+      def has_children?
+        target_production.has_children?
       end
       def to_bnf_rhs; @target_symbol_name.to_s end
     end
@@ -92,19 +177,34 @@ module Hipe
       # this is concerned with setting locks so
       # recursive symbols don't try to build themselves infinitely
       def nonterminal_common_init_locks
-        @making_this_parser = nil
+        @building_this_parser = nil
       end
-      def nonterminal_common_build_parse ctxt, parse_class
-        if @making_this_parser
-          rslt = RecursiveReference.new @making_this_parser
+      def building_this_parser
+        @building_this_parser
+      end
+      # only for hackery
+      def _building_this_parser= foo
+        @building_this_parser = foo
+      end
+      def nonterminal_common_build_parse ctxt, parse_class, opts = {}
+        if @building_this_parser
+          if opts[:recursive_hook]
+            rslt = opts[:recursive_hook].call(
+              self, ctxt, parse_class, opts
+            )
+          else
+            rslt = RecursiveReference.new @building_this_parser
+          end
         else
           parser = parse_class.new self, ctxt #note2
-          @making_this_parser = parser
-          parser.build_children!
-          @making_this_parser = nil
+          @building_this_parser = parser
+          parser.build_children! opts
+          @building_this_parser = nil
           rslt = parser
         end
+        rslt
       end
+      def has_children?; true end
     end
 
     class UnionSymbol
@@ -124,9 +224,14 @@ module Hipe
         @children.push child
         nil
       end
-      def build_parse ctxt
-        nonterminal_common_build_parse ctxt, UnionParse
+
+      #
+      # opts: :child_hook, :recursive_hook
+      #
+      def build_parse ctxt, opts={}
+        nonterminal_common_build_parse ctxt, UnionParse, opts
       end
+
       # this probably isn't correct
       def zero_width?
         return @zero_width unless @zero_width.nil?
@@ -157,6 +262,7 @@ module Hipe
 
     class ConcatProduction
       include Productive, NonterminallyProductive
+      extend Heapy # release
       attr_accessor :children
       def initialize grammar, ary
         nonterminal_common_init_locks
@@ -179,8 +285,8 @@ module Hipe
         determine_offsets! if @zero_width.nil?
         @zero_width
       end
-      def build_parse ctxt
-        nonterminal_common_build_parse ctxt, ConcatParse
+      def build_parse ctxt, opts={}
+        nonterminal_common_build_parse ctxt, ConcatParse, opts
       end
       def determine_offsets!
         @zero_width_map = @children.map(&:zero_width?)
@@ -211,6 +317,9 @@ module Hipe
         throw :ref_fail, {:names => missing } if missing.length > 0
       end
       def to_bnf_rhs; @children.map(&:to_bnf_rhs) * ' ' end
+      def release_this_resetted_parse parse
+        release parse
+      end
     end
   end
 end

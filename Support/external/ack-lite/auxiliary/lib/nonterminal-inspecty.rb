@@ -1,23 +1,5 @@
 module Hipe
   module Parsie
-
-    class InspectContext
-      attr_reader :indent, :visited
-      def initialize
-        @level = 0
-        @indent = ''
-        @visited = Setesque.new('visited')
-      end
-      def indent_indent!
-        @level += 1
-        @indent = ('    ' * @level)
-      end
-      def dedent_indent!
-        @level -= 1
-        @indent = ('    ' * @level)
-      end
-    end
-
     module NonterminalInspecty
       include Inspecty
       def inspct_extra ll, ctx, opts

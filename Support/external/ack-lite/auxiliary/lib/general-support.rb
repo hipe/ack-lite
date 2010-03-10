@@ -17,6 +17,14 @@ module Hipe
       def self.[] ary
         ary.extend self
       end
+      def inspct ctxt=InspectContext.new, opts={}
+        buffie = ''
+        each_with_index do |x,i|
+          buffie << "\n" unless i == 0
+          buffie << (x.respond_to?(:inspct) ? x.inspct(ctxt,opts) : x.inspect)
+        end
+        buffie
+      end
       def insp
         c = InspectContext.new
         each do |x|
@@ -101,6 +109,52 @@ module Hipe
       end
     end
 
+    # used in terminal and nonterminal parses
+    module Inspecty
+      def class_basename
+        Inspecty.class_basename(self.class)
+      end
+      def self.class_basename cn
+        cn.to_s.split('::').last
+      end
+      def insp; $stdout.puts inspct; 'done.' end
+      def inspct_tiny
+        sprintf("<%s%s#%s>",
+          class_basename.scan(/[A-Z]/).join(''),
+          symbol_name.inspect,
+          @parse_id ? @parse_id : object_id
+        )
+      end
+      # block - true or false whether to skip
+      def inspct_attr(ll,arr,ind='',&b)
+        arr = [arr] unless arr.kind_of? Array
+        arr.each do |a|
+          val = instance_variable_get(a)
+          next if block_given? && ! yield(val)
+          ll << sprintf("#{ind}#{a}=%s",val.inspect)
+        end
+        nil
+      end
+    end
+
+    class InspectContext
+      attr_accessor :indent
+      attr_reader :visited
+      def initialize
+        @level = 0
+        @indent = ''
+        @visited = Setesque.new('visited')
+      end
+      def indent_indent!
+        @level += 1
+        @indent = ('    ' * @level)
+      end
+      def dedent_indent!
+        @level -= 1
+        @indent = ('    ' * @level)
+      end
+    end
+
     module UserFailey
       # something the user did wrong in creating grammars, etc
     end
@@ -124,18 +178,21 @@ module Hipe
 
       include UserFailey # not sure about this
 
-      attr_accessor :parse
+      attr_reader :parse, :tokenizer
 
-      def initialize tokenizer, parse
-        @tokenizer = tokenizer
-        @parse = parse
+      def self.from_parse_loop tokenizer, parse
+        ex = parse.expecting.uniq
+        expecting = ex.size == 0 ? 'no more input' : ex.join(' or ')
+        prepositional_phrase = tokenizer.describe
+        msg = "expecting #{expecting} #{prepositional_phrase}"
+        pf = ParseFail.new(msg)
+        pf.instance_variable_set('@parse', parse)
+        pf.instance_variable_set('@tokenizer', tokenizer)
+        pf
       end
 
       def describe
-        ex = @parse.expecting.uniq
-        expecting = ex.size == 0 ? 'no more input' : ex.join(' or ')
-        prepositional_phrase = @tokenizer.describe
-        "expecting #{expecting} #{prepositional_phrase}"
+        message
       end
 
     end

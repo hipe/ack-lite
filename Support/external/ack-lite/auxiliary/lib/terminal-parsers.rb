@@ -2,13 +2,16 @@ module Hipe
   module Parsie
 
     module Terminesque
-      include Misc, FaileyMcFailerson, StrictOkAndDone
+      include Misc, FaileyMcFailerson, StrictOkAndDone, Inspecty, Childable
       def production
         Productions[@production_id]
       end
       def symbol_name
         production.respond_to?(:symbol_name) ?
           production.symbol_name : nil
+      end
+      def release!
+        procution.release self
       end
     end
 
@@ -19,6 +22,10 @@ module Hipe
         @production_id = prod.production_id
         @done = false
         @ok = false
+      end
+      def reset!
+        @parent_id = nil
+        @done = @ok = false
       end
       def look token
         no "can't look when done" if @done
@@ -65,6 +72,10 @@ module Hipe
         @re = production.re
         @done = false
         @ok = false    # @todo some regexs will be zero width
+      end
+      def reset!
+        @parent_id = nil
+        @done = @ok = @matches = false
       end
       def expecting
         (@ok && @done) ? [] : [@symbol_name]

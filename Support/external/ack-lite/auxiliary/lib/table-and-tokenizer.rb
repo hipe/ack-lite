@@ -9,20 +9,21 @@ module Hipe
         tokenizer = build_tokenizer mixed
         parse = build_start_parse ctxt
         while ( ! parse.done? ) && ( token = tokenizer.peek )
-          ctxt.tic
+          ctxt.tic!
+          $token = token
           resp = parse.look token
           if 0 != WANTS & resp
             parse.take! token
-            tokenizer.pop!
+            tokenizer.pop!  # do a conditional that runs a hook here
           else
             break
           end
           break if parse.done?
         end
         if ! parse.ok?
-          pf = ParseFail.new(tokenizer, parse)
+          pf = ParseFail.from_parse_loop(tokenizer, parse)
         elsif tokenizer.has_more_tokens?
-          pf = ParseFail.new(tokenizer, parse)
+          pf = ParseFail.from_parse_loop(tokenizer, parse)
         else
           pf = nil
         end

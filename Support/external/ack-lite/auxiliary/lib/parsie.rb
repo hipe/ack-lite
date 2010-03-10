@@ -13,3 +13,4 @@ require root + '/recursive-reference.rb'
 # note9 - if we wanted to get really cracked out we would deal with
 #         handling multiple interested children in the running in concats.
 #         but for now, such scenarios should be built into unions not concats.
+# note10 - recursive references are collapsed very late, might cause problems
