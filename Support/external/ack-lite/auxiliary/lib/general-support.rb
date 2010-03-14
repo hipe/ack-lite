@@ -6,10 +6,40 @@ module Hipe
         [TrueClass,FalseClass].include? mixed.class
       end
       def desc_bool name
-        "#{name}:#{send(name) ? 'yes' : 'no'}"
+        "#{name}=#{send(name).inspect}"
       end
       def no taxes
         raise No.new taxes
+      end
+      def oxford_comma items, sep, comma=', '
+        return '()' if items.size == 0
+        return items[0] if items.size == 1
+        seps = [sep, '']
+        seps.insert(0,*Array.new(items.size - seps.size, comma))
+        items.zip(seps).flatten.join('')
+      end
+    end
+
+    module AttrAccessors
+      include Misc
+      def boolean_accessor *names
+        names.each do |name|
+          setter_name = "#{name}="
+          getter_name = name
+          getter_alias = "#{name}?"
+          attr_name = "@#{name}"
+          define_method getter_name do
+            No.no("not defined: #{attr_name}") unless
+              instance_variable_defined?(attr_name)
+            instance_variable_get attr_name
+          end
+          define_method setter_name do |x|
+            No.no("won't set \"#{name}\" to not bool: #{x.inspect}") unless
+              x.kind_of?(TrueClass) or x.kind_of?(FalseClass)
+            instance_variable_set attr_name, x
+          end
+          alias_method getter_alias, getter_name
+        end
       end
     end
 
@@ -118,10 +148,10 @@ module Hipe
         cn.to_s.split('::').last
       end
       def insp; $stdout.puts inspct; 'done.' end
-      def inspct_tiny
-        sprintf("<%s%s#%s>",
-          class_basename.scan(/[A-Z]/).join(''),
-          symbol_name.inspect,
+      def short
+        sprintf('<#%s:%s#%s>',
+          parse_type_short,
+          symbol_name_for_debugging,
           @parse_id ? @parse_id : object_id
         )
       end
@@ -165,7 +195,12 @@ module Hipe
 
     class AppFail < Fail
       # we did something wrong internally in this library
+      def self.no *args
+        raise No.new(*args)
+      end
     end
+
+    No = AppFail # internal shorthand
 
     class ParseParseFail < Fail
       # something the user did wrong in construting a grammar
@@ -196,8 +231,6 @@ module Hipe
       end
 
     end
-
-    No = AppFail # internal shorthand
 
   end
 end

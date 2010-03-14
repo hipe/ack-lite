@@ -44,7 +44,7 @@ module Hipe::Parsie
     it "should do inspct (3)" do
       digits = self.digits
       sym = digits.symbol(:list)
-      par = sym.build_parse(ParseContext.new)
+      par = sym.build_parse(ParseContext.new, RootParse)
       target = /.*UnionParse.*ConcatParse.*RecursiveReference.*RegexpParse.*/m
       str = par.inspct
       str.must_match target

@@ -114,7 +114,7 @@ module Hipe::Parsie
     end
 
     it("single token zero string grammar should know about its offsets (9)")do
-      zero_string.satisfied_and_final_offset_must_be(-1,0)
+      zero_string.satisfied_and_final_offset_must_be(0,0)
     end
 
     it(

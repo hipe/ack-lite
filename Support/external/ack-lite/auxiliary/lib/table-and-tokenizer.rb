@@ -11,10 +11,18 @@ module Hipe
         while ( ! parse.done? ) && ( token = tokenizer.peek )
           ctxt.tic!
           $token = token
+          if Debug.true?
+            puts "\n\n\nTOKEN: #{token.inspect} (tic #{ctxt.tic})\n\n\n"
+          end
           resp = parse.look token
           if 0 != WANTS & resp
             parse.take! token
             tokenizer.pop!  # do a conditional that runs a hook here
+            if ctxt.pushback?
+              str = ctxt.pushback_pop.string
+              puts "PUSING BACK: #{str}" if Debug.true?
+              tokenizer.push str
+            end
           else
             break
           end
@@ -57,6 +65,13 @@ module Hipe
         @offset += 1 # let it get one past last offset
         @lines[@offset]
       end
+      # this is experimental.  if we want to add end-of stack hooks
+      # we should change this to replace_current
+      def push item
+        @lines[@offset] = item
+        @offset -= 1
+        nil
+      end
       def has_more_tokens?
         @offset < @last_offset # b/c pop is the only way to go
       end
@@ -96,6 +111,7 @@ module Hipe
         @table_name = name
         @symbols = Setesque.new('symbols'){|id| Productions[id]}
         @productions = []
+        @current_add_line = 0
         yield self
       end
 
@@ -105,9 +121,15 @@ module Hipe
 
       # adds a production rule, merging it into
       # or creating a union if necessary
-      def add symbol_name, mixed
+      def add symbol_name, mixed, opts={}, &block
+        @current_add_line += 1
         @start_symbol_name = symbol_name if @symbols.size == 0
-        prod = build_production mixed
+        prod = nil
+        begin
+          prod = build_production mixed, nil, opts, &block
+        rescue ParseParseFail=>e
+          return parse_parse_fail e, symbol_name, mixed
+        end
         add_prod prod
         prod.table_name = @table_name
         prod.symbol_name = symbol_name
@@ -134,6 +156,17 @@ module Hipe
         nil
       end
 
+      def parse_parse_fail e, symbol_name, mixed
+        lines = []
+        lines << "in grammar \"#{@table_name}\""
+        lines << e.message
+        lines << "at production line number #{@current_add_line}"
+        lines << "near (#{symbol_name.inspect} --> #{mixed.inspect})"
+        msg = lines * ' '
+        class << e; self end.send(:define_method, :message) { msg }
+        raise e
+      end
+
       def add_prod prod
         unless prod.kind_of? Productive
           $prod = prod
@@ -144,7 +177,8 @@ module Hipe
 
       # the argument is given a default just for testing
       def build_start_parse ctxt= ParseContext.new
-        symbol(@start_symbol_name).build_parse(ctxt)
+        p = symbol(@start_symbol_name).build_parse(ctxt, RootParse)
+        p
       end
 
       def reference_check
@@ -169,10 +203,11 @@ module Hipe
         end
       end
 
-      def build_production mixed, allowed = nil
+      def build_production mixed, allowed=nil, opts={}, &block
         if allowed
           unless allowed.detect{|x| mixed.kind_of? x }
-            raise ParseParseFail.new("can't use #{mixed.class.inspect} here")
+            raise ParseParseFail.new("can't use #{mixed.class.inspect}"<<
+            " here, expecting "<<oxford_comma(allowed.map(&:to_s),' or '))
           end
         end
 
@@ -180,7 +215,7 @@ module Hipe
         case mixed
           when Regexp; RegexpProduction.new(mixed)
           when Symbol; SymbolReference.new(mixed)
-          when Array;  ConcatProduction.new(self, mixed)
+          when Array;  ConcatProduction.factory(self, mixed, opts, &block)
           when String; StringProduction.new(mixed)
           else raise ParseParseFail.new("no: #{mixed.inspect}")
         end

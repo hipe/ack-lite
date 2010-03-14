@@ -79,6 +79,7 @@ module Hipe
       def inspct_tiny
         inspct nil, nil
       end
+      alias_method :short, :inspct_tiny
 
       #
       # When a parse reference is no longer needed (when it is 'collapsed')
@@ -222,12 +223,12 @@ module Hipe
         @cached_decisions[root_union.parse_context.tic].response
       end
 
-      def ridiculous_new_left_recursive_cparse cparse, ref
+      def ridiculous_new_left_recursive_cparse cparse, new_ref
         cparse._start_offset = 0 + CONCAT_INCREMENT
           # todo we might wanna pass opts below
         cparse.build_next_children_and_evaluate!
         cparse.hook_once_when_becomes_ok do |cparse, decision, token|
-          step3_when_ok ref, HARD_CODED_THIEVERY, cparse, decision, token
+          step3_when_ok new_ref, HARD_CODED_THIEVERY, cparse, decision, token
         end
         nil
       end
@@ -242,7 +243,7 @@ module Hipe
       def step3_when_ok ref, idx_in_union, concat, decision, token
         # pop stolen off of root, pop onto concat where reference once was
         if ! ref.parent? || ref.parent != concat
-          debugger; 'figure this out'
+          no('sukland')
         end
         stolen = remove_child root_union, idx_in_union, :signed_by => concat
         idx_in_concat = ref.index_in_parent
@@ -259,18 +260,21 @@ module Hipe
         # we need to fake it so that the recursive hook is triggered
         root_union.production._building_this_parser = root_union
         idxs_added = []
-        children_productions.each_with_index do |cp,idx|
-          if ! cp.has_children? then next
-          elsif you_got_the_goods_kid(cp)
-            ref = nil
-            cparse = cp.build_parse(
+        children_productions.each_with_index do |prod,idx|
+          if ! prod.has_children? then next
+          elsif left_recursive_concat_production?(prod)
+            new_ref = nil
+            cparse = prod.build_parse(
               root_union.parse_context,
-              :recursive_hook => lambda do |*_|
-                ref = Reference.new concat
-                ref
+              root_union,
+              :recursive_hook => lambda do |_prod, _ctxt, _kls, _opts|
+                new_ref = Reference.new _prod.building_this_parser
+                new_ref
               end
             )
-            ridiculous_new_left_recursive_cparse cparse, ref
+            new_ref.parent_id = cparse.parse_id # dangerous as all getout
+            cparse.unset_parent! # dumb
+            ridiculous_new_left_recursive_cparse cparse, new_ref
             idxs_added << add_child(root_union, cparse)
           else
             no("we have never dealt with this kind of grammar before")
@@ -285,7 +289,7 @@ module Hipe
         end
       end
 
-      def you_got_the_goods_kid cp
+      def left_recursive_concat_production? cp
         cp.kind_of?(ConcatProduction) &&
           cp.children[0].kind_of?(SymbolReference) &&
           cp.children[0].target_production.production_id ==

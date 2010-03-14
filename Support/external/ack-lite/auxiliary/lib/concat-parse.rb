@@ -11,20 +11,24 @@ module Hipe
       attr_reader :parse_id # make sure this is set in constructor
       attr_accessor :children, :final_offset, :satisfied_offset
 
-      def initialize production, ctxt
+      def initialize production, ctxt, parent
+        @parse_id = Parses.register self
+        self.parent_id = parent.parse_id
         @production_id = production.production_id
         @context_id = ctxt.context_id
-        @parse_id = Parses.register self
         @start_offset = :not_set
         @done = nil
         @ok = nil
         @current = []
-        @zero_width_map = production.zero_width_map
+        @zero_map = production.zero_width_map
         @zero_width = production.zero_width?
         @satisfied_offset = production.satisfied_offset
         @final_offset = production.final_offset
         locks_init
       end
+
+      def parse_type; :concat end
+      def parse_type_short; 'c' end
 
       # private
       def reset!
@@ -50,6 +54,9 @@ module Hipe
       def zero_width?; @zero_width end
 
       def build_children! opts={}
+        if depth.nil?
+          no("where's my depth?")
+        end
         prod_childs = production.children
         @children = AryExt[Array.new(prod_childs.size)]
         build_next_children_and_evaluate! opts
@@ -73,8 +80,35 @@ module Hipe
           else
             @done = false
             (@start_offset..@children.length-1).each do |idx|
-              @current << idx
-              break if @zero_width_map[idx] == false
+              @current.push idx
+              # this is experimental not sure don't know hack
+              # the problem is if the thing is open and ok, we need
+              # to move forward.  The big issue is .. making sure only one
+              # child gets the cheeze.  and when to move forward
+              # start_offset is they key, right?
+
+              # it is non-zero width
+              if @zero_map[idx] == false
+                child = @children[idx]
+                if child
+                  if child.done?
+                    no("why is a closed child in the running here? "<<
+                      "wasn't start_offset advanced somewhere else?"
+                    )
+                  end
+                  if child.ok?
+                    # child is ok, keep it in the running but advance current
+                    # ''not sure''
+                  else
+                    break # child is not ok, stay here
+                  end
+                else
+                  break # there is no child populated here yet, stay here (?)
+                end
+              else
+                # this is a zero width child, (it can match on no tokens)
+                # so keep cycling thru other children to build current
+              end
             end
             build_current! opts
           end
@@ -99,8 +133,7 @@ module Hipe
         ctxt = parse_context
         @current.each do |idx|
           if (@children[idx].nil?)
-            @children[idx] = prod[idx].build_parse ctxt, opts
-            @children[idx].parent_id = parse_id
+            @children[idx] = prod[idx].build_parse ctxt, self, opts
           else
             puts("child was already there") if Debug.true?
           end
@@ -109,104 +142,128 @@ module Hipe
       end
 
       # per note9 we only return the first interested child
+      # note this one itself should not change any state
       def wanter_index_and_response token
-        wanter = false
-        child_resp = nil
-        wanter_idx = nil
+        found_idx = found_response_code = found = false
         look_lockout do
           @current.each do |idx|
             child = @children[idx]
-            child_resp = child.look token
-            if (0 != WANTS & child_resp)
-              wanter = child
-              wanter_idx = idx
+            code = child.look token
+            resp = Response[code]
+            if (resp.wants?)
+              found = true;
+              found_idx = idx
+              found_response_code = code
               break
             end
           end
         end
-        if wanter_idx
-          [wanter_idx, child_resp]
+        if found
+          response = Response[found_response_code]
+          [found_idx, response]
         else
           [nil, nil]
         end
       end
 
-      class Decision < Struct.new(:ok, :done, :want)
-        include Decisioney, Misc # desc_bool
-        def response
-          ok_bit   = ok ? SATISFIED : 0
-          open_bit = done ? 0 : OPEN
-          want_bit = want ? WANTS : 0
-          return want_bit | ok_bit | open_bit
+      def look token
+        if Debug.look?
+          puts "#{indent}#{short}.look (start) #{token.inspect}"
         end
-        alias_method :ok?, :ok
-        alias_method :done?, :done
-        alias_method :want?, :want
-        def inspct_tiny
+        d = look_decision(token)
+        if Debug.look?
+          puts("#{indent}#{short}.look #{token.inspect} was: "<<
+          d.inspct_for_debugging)
+        end
+        d.response
+      end
+
+      class Decision
+        extend AttrAccessors
+        boolean_accessor :open, :satisfied, :wants
+        include Decisioney
+        attr_accessor :wanter_idx, :child_response_code,
+          :child_response, :child_still_open
+        def short
           them = %w(ok done)
-          them << 'want' unless want.nil?
+          them << 'wants' unless wants.nil?
           "("<<(them.map{|x| desc_bool(x)}*',')<<")"
         end
       end
 
-      def look token
-        puts "#{inspct_tiny}.look #{token.inspect}.." if Debug.look?
-        look_decision(token).response
-      end
+      def look_decision token
 
-      def look_decision(token)
         @last_look = token # just for debugging
-        decision = Decision.new
-        wanter_idx, child_resp = wanter_index_and_response(token)
-        if ! wanter_idx
-          decision.ok = @ok
-          decision.done = @done
-          decision.want = false
+        d = Decision.new
+        d.wanter_idx, d.child_response = wanter_index_and_response(token)
+        if ! d.wanter_idx
+          d.ok = @ok
+          d.done = @done
+          d.wants = false
         else
-          # we would ajust our offset based on whether or not
+          # we would adjust our offset based on whether or not
           # the interested child would still be open
-          child_still_open = (0 != OPEN & child_resp)
-          hypothetic_next_index = wanter_idx + 1
-          i_am_done = hypothetic_next_index >= @final_offset
-          i_am_ok = hypothetic_next_index >= @satisfied_offset
-          decision.ok = i_am_ok
-          decision.done = i_am_done
-          decision.want = true
-        end
-        if Debug.look?
-          puts( "#{inspct_tiny}.look #{token.inspect} was: "<<
-            decision.inspct_tiny
-          )
-        end
-        decision
-      end
+          d.wants = true
+          if d.wanter_idx > @final_offset
+            d.done = true
+          elsif d.wanter_idx < @final_offset
+            d.done = false
+          else
+            d.done = d.child_response.done?
+          end
 
-      def take! token
-        puts "#{inspct_tiny}.take! #{token.inspect}" if Debug.true?
-        @last_take = token
-        wanter_idx, child_resp = wanter_index_and_response(token)
-        no("never") unless wanter_idx # there are lockouts and stuff
-        child_resp = nil
-        take_lockout do
-          child_resp = @children[wanter_idx].take! token
-        end
-        child_open = (0 != OPEN & child_resp)
-        child_satisfied = (0 != SATISFIED & child_resp)
-        @start_offset = child_open ? wanter_idx : wanter_idx + 1
-        build_next_children_and_evaluate!
-        decision = Decision.new(@ok, @done)
-        if Debug.true?
-          puts( "#{inspct_tiny}.take! #{token.inspect} BEFORE HOOKS was: "<<
-            " #{decision.inspct_tiny}")
-        end
-
-        if decision.ok? && ! @prev_ok
-          @prev_ok = true
-          run_hook_onces_when_becomes_ok do |hook|
-            hook.call self, decision, token
+          if d.wanter_idx > @satisfied_offset
+            d.ok = true
+          elsif d.wanter_idx < @satisfied_offset
+            d.ok = false
+          else
+            d.ok = d.child_response.ok?
           end
         end
-        decision.response
+        d.assert_complete
+        d
+      end
+
+      def take! foo
+        puts "#{indent}#{short}.take! #{foo.inspect}" if Debug.true?
+        @last_take = foo
+        d = look_decision foo
+        if ! d.wants?
+          debugger; 'wtf'
+          no("cannot take what i do not want")
+        end
+        code_actual = nil
+        take_lockout{ code_actual = @children[d.wanter_idx].take!(foo) }
+        d2 = Response[code_actual]
+        unless d.child_response.equivalent? d2
+          diff = d.child_response.diff(d2)
+          msg = "broken promises: #{diff.inspect}"
+          no(msg)
+        end
+        @start_offset = d2.open? ? d.wanter_idx : d.wanter_idx + 1
+        build_next_children_and_evaluate!
+        d2 = Decision.new
+        d2.ok = @ok
+        d2.done = @done
+        d2.wants = true
+
+        unless d2.equivalent?(d)
+          no("broken promises: "+d.diff(d2).inspect)
+        end
+
+        if Debug.true?
+          puts( "#{indent}#{short}.take! #{foo.inspect} "<<
+            "BEFORE HOOKS was: #{d.short} (kept promises)")
+        end
+
+        if d2.ok? && ! @prev_ok
+          @prev_ok = true
+          run_hook_onces_when_becomes_ok do |hook|
+            hook.call self, d2, foo
+          end
+        end
+
+        d2.response
       end
 
       def inspct_extra(ll,ctx,opts)

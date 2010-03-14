@@ -88,15 +88,17 @@ module Hipe
         no("don't clobber this") if obj.respond_to? meth
         class<<obj; self end.send(:define_method,meth){val}
       end
-      def building_this_parser; nil end
-      def really_stupid_heapy_terminal_parse_build klass
+      def really_stupid_heapy_terminal_parse_build klass, ctxt, parent
+        if parent.depth.nil?
+          no("where is depth?")
+        end
         if self.class.heap[:default].any?
           use_this_one = self.class.heap[:default].pop
-          use_this_onse.send(:initialize, self)
+          use_this_onse.send(:initialize, self, ctxt, parent)
         else
-          rslt = klass.new self
+          use_this_one = klass.new self, ctxt, parent
         end
-        rslt
+        use_this_one
       end
     end
 
@@ -113,11 +115,18 @@ module Hipe
         end
         @string_literal = string
       end
-      def build_parse ctxt, opts=nil
-        really_stupid_heapy_terminal_parse_build StringParse
+      def build_parse ctxt, parent, opts=nil
+        if parent.depth.nil?
+          no("where is depth?")
+        end
+        really_stupid_heapy_terminal_parse_build StringParse, ctxt, parent
       end
       def to_bnf_rhs; @string_literal.inspect end
-      def zero_width?; @string_literal == "" end
+      def zero_width?
+        false
+        # see test 510 - an empty string is a meaningful token
+        # @string_literal == ""
+      end
       def has_children?; false end
     end
 
@@ -126,8 +135,8 @@ module Hipe
       extend Heapy
       attr_accessor :re
       def initialize re; @re = re end
-      def build_parse ctxt, opts=nil
-        really_stupid_heapy_terminal_parse_build RegexpParse
+      def build_parse ctxt, parent, opts=nil
+        really_stupid_heapy_terminal_parse_build RegexpParse, ctxt, parent
       end
       # @todo not bnf!
       def to_bnf_rhs;
@@ -156,9 +165,9 @@ module Hipe
           throw :ref_fail, {:name=>target_symbol_name}
         end
       end
-      def build_parse ctxt, opts={}
+      def build_parse ctxt, parent, opts={}
         prod = target_production
-        prod.build_parse ctxt, opts
+        prod.build_parse ctxt, parent, opts
       end
       # we are going to let the implementors handle recursion
       def zero_width?
@@ -186,7 +195,10 @@ module Hipe
       def _building_this_parser= foo
         @building_this_parser = foo
       end
-      def nonterminal_common_build_parse ctxt, parse_class, opts = {}
+      def nonterminal_common_build_parse parse_class, ctxt, parent, opts = {}
+        if parent.depth.nil?
+          no("why not?")
+        end
         if @building_this_parser
           if opts[:recursive_hook]
             rslt = opts[:recursive_hook].call(
@@ -194,9 +206,17 @@ module Hipe
             )
           else
             rslt = RecursiveReference.new @building_this_parser
+            rslt.parent_id = parent.parse_id
           end
         else
-          parser = parse_class.new self, ctxt #note2
+          if parent.depth.nil?
+            no('no')
+          end
+          parser = parse_class.new self, ctxt, parent #note2
+          if parser.depth.nil?
+            debugger
+            no('no')
+          end
           @building_this_parser = parser
           parser.build_children! opts
           @building_this_parser = nil
@@ -228,8 +248,8 @@ module Hipe
       #
       # opts: :child_hook, :recursive_hook
       #
-      def build_parse ctxt, opts={}
-        nonterminal_common_build_parse ctxt, UnionParse, opts
+      def build_parse ctxt, parent, opts={}
+        nonterminal_common_build_parse UnionParse, ctxt, parent, opts
       end
 
       # this probably isn't correct
@@ -264,10 +284,17 @@ module Hipe
       include Productive, NonterminallyProductive
       extend Heapy # release
       attr_accessor :children
+      def self.factory grammar, ary, opts
+        if ary.size > 0 && ary[0].kind_of?(Range)
+          RangeProduction.new grammar, ary, opts
+        else
+          self.new grammar,ary
+        end
+      end
       def initialize grammar, ary
         nonterminal_common_init_locks
         @children = ary.map do |x|
-          prod = grammar.build_production(x,[String, Symbol])
+          prod = grammar.build_production(x,[String, Symbol, Array])
           prod.table_name = grammar.table_name
           # as they are only strings or symbol references, they don't
           # need to register with the table and get production ids, etc
@@ -285,12 +312,14 @@ module Hipe
         determine_offsets! if @zero_width.nil?
         @zero_width
       end
-      def build_parse ctxt, opts={}
-        nonterminal_common_build_parse ctxt, ConcatParse, opts
+      def build_parse ctxt, parent, opts={}
+        nonterminal_common_build_parse ConcatParse, ctxt, parent, opts
       end
       def determine_offsets!
         @zero_width_map = @children.map(&:zero_width?)
-        @zero_width = ! @zero_width_map.detect{|x| x == false}
+        # if any one of your children is not zero width,
+        # then you are not zero width
+        @zero_width = !(false==@zero_width_map.detect{|x| x == false})
         @final_offset = @children.length - 1;
         # find the first offset that is not zero width starting from end
         idx = (0..@final_offset).map.reverse.detect do |i|
@@ -319,6 +348,60 @@ module Hipe
       def to_bnf_rhs; @children.map(&:to_bnf_rhs) * ' ' end
       def release_this_resetted_parse parse
         release parse
+      end
+    end
+
+    class RangeProduction
+      include Productive, NonterminallyProductive
+      Infinity = -1
+      ZeroOrOne = (0..1)
+      OneOrMore = (1..Infinity)
+      ZeroOrMore = (0..Infinity)
+      include Productive
+      attr_reader :range
+      def initialize grammar, ary, opts
+        ParseParseFail.new("range production arrays size must be 2, not "<<
+        "\"#{ary.size}\"") if ary.size != 2
+        no("never") unless ary[0].kind_of? Range
+        @range = ary[0]
+        @opts = opts
+        child = grammar.build_production(ary[1],[Symbol, Array])
+        if child.respond_to?(:symbol_name=)
+          child.symbol_name = false
+        end
+        child.table_name = grammar.table_name
+        if child.respond_to? :production_id
+          @child_production_id = child.production_id
+        else
+          @child_production = child
+        end
+      end
+      def child_production
+        @child_production || Productions[@child_production_id]
+      end
+      def to_bnf_rhs
+        child = self.child_production.to_bnf_rhs
+        mine = "(#{child})#{range_bnf}"
+        mine
+      end
+      def range_bnf
+        if    ZeroOrMore == @range then '*'
+        elsif OneOrMore  == @range then '+'
+        elsif ZeroOrOne  == @range then '?'
+        else "(#{@range.to_s})" end
+      end
+      def zero_width?
+        if @zero_width.nil?
+          if @range.begin == 0
+            @zero_width = true
+          else
+            @zero_width = child_production.zero_width?
+          end
+        end
+        @zero_width
+      end
+      def build_parse ctxt, parent, opts=nil
+        RangeParse.new self, ctxt, parent, opts, @opts
       end
     end
   end

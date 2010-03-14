@@ -29,7 +29,7 @@ module Hipe
       end
     end
 
-    [StringParse, RegexpParse, UnionParse, ConcatParse].each do |x|
+    [StringParse, RegexpParse, UnionParse, ConcatParse,RangeParse].each do |x|
       x.send(:include, ParseTestAssertions)
     end
 

@@ -8,15 +8,24 @@ module Hipe
     # for parsers - nonterminals
 
     module NonterminalParsey
-      include Misc
+      include Parsey, BubbleUppable
       def production
         Productions[@production_id]
       end
-      def parse_context
-        ParseContext.all[@context_id]
-      end
       def symbol_name
         production.symbol_name
+      end
+      def symbol_name_for_debugging
+        use = symbol_name
+        if (use == false || use == nil)
+          if (!parent?)
+            use = "(anonymous with no parent!!??)"
+          else
+            parent_name = parent.symbol_name_for_debugging
+            use = "(#{parse_type} in #{parent_name})"
+          end
+        end
+        use
       end
       def unparse
         _unparse(rslt = [])
@@ -35,9 +44,7 @@ module Hipe
       def oking?;   @lock[:ok?] end
       def look_lockout &block
         if done?
-          puts "\n\n\nWON'T LOOK WHEN DONE--CHECK IT OUT\n\n"
-          debugger; 'x'
-          # no("#{inspct_tiny} can't look when done")
+          no("\n\n\nWON'T LOOK WHEN DONE--CHECK IT OUT\n\n")
         end
         common_lockout :look, &block
       end
@@ -87,9 +94,10 @@ module Hipe
         no("child not found") unless found
         found
       end
-    end # end module
+    end # end NonterminalParsey
   end
 end
 
 require root + '/union-parse.rb'
 require root + '/concat-parse.rb'
+require root + '/range-parse.rb'

@@ -18,7 +18,8 @@ module Hipe
         a = opts[:visited] ? '(again:)' : ''
         ll = []
         ll << sprintf("#<#{a}%s:%s",class_basename,@parse_id.inspect)
-        ll << sprintf("symbol_name=%s",symbol_name.inspect)
+        use_symbol_name = symbol_name_for_debugging
+        ll << sprintf("symbol_name=%s",use_symbol_name)
         inspct_attr(ll,%w(@done @ok))
         inspct_extra(ll,ctx,opts)
         ch = @children

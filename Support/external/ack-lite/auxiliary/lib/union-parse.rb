@@ -12,16 +12,20 @@ module Hipe
       attr_reader :parse_id # make sure this is set in constructor
       attr_reader :children # debug gin
 
-      def initialize union, ctxt # note2 - this is only called in one place
+      # note2 - this is only called in one place
+      def initialize union, ctxt, parent
+        @parse_id = Parses.register self
+        self.parent_id = parent.parse_id
         locks_init
         @production_id = union.production_id
         @context_id = ctxt.context_id
-        @parse_id = Parses.register self
         @done = nil; @ok = nil
         # in the running is an *ordered* list of ids (ordered by precedence)
         # that are not done (still accepting). doesn't matter if they are ok
         @in_the_running = false
       end
+      def parse_type; :union end
+      def parse_type_short; 'u' end
 
       def build_children! opts={}
         context = parse_context
@@ -32,10 +36,9 @@ module Hipe
           if opts[:child_hook]
             child = opts[:child_hook].call(self, child_production, idx, opts)
           else
-            child = child_production.build_parse(context)
+            child = child_production.build_parse(context, RootParse)
           end
           if :skip_child != child
-            child.parent_id = parse_id
             @children << child
           end
         end
@@ -44,16 +47,21 @@ module Hipe
       end
 
       # this wraps all of our ambigity logic, etc
-      class Decision < Struct.new(:idxs_want, :idxs_satisfied,
+      class Decision < Struct.new(
+        :idxs_want, :idxs_satisfied,
         :idxs_open, :idxs_closed);
+
+        def open;       self.idxs_open.size > 0      end
+        def satisfied;  self.idxs_satisfied.size > 0 end
+        def wants;      self.idxs_want.size > 0      end
+
+        include Decisioney, Misc # desc_bool
 
         class << self
           def main_props
             %w(idxs_open idxs_satisfied idxs_want idxs_closed)
           end
         end
-
-        include Decisioney, Misc # desc_bool
 
         def initialize
           self.idxs_open = []
@@ -125,30 +133,8 @@ module Hipe
           nil
         end
 
-        def done?
-          no_more_open = self.idxs_open.size == 0
-          no_more_open
-          # ok_and_done_this_round = self.idx_done_and_ok.size > 0
-          # no_more_open || ok_and_done_this_round
-        end
-
-        def ok?
-          self.idxs_satisfied.size > 0
-        end
-
-        def want?
-          self.idxs_want.size > 0
-        end
-
-        def response
-          want_bit = self.want? ? WANTS : 0
-          ok_bit = self.ok? ? SATISFIED : 0
-          open_bit = self.done? ? 0 : OPEN
-          want_bit | ok_bit | open_bit
-        end
-
         def inspct_tiny
-          '('<< (%w(want? ok? done?).map{|x| desc_bool(x)}.join(', ')) << ')'
+          '('<< (%w(wants? ok? done?).map{|x| desc_bool(x)}.join(', ')) << ')'
         end
       end
 
@@ -194,6 +180,7 @@ module Hipe
           puts("#{inspct_tiny}.look_decision on #{token.inspect} was: "<<
                 decision.inspct_tiny)
         end
+        decision.assert_complete
         decision
       end
 
@@ -204,7 +191,7 @@ module Hipe
 
       def take! token
         look = look_decision token
-        no("won't take when don't want") unless look.want?
+        no("won't take when don't want") unless look.wants?
         take = Decision.new
         take_lockout do
           look.idxs_want.each do |idx|
