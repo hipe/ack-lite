@@ -1,9 +1,4 @@
-require 'minitest/autorun'  # unit and spec
-require 'ruby-debug'
-root = File.expand_path('..',File.dirname(__FILE__))
-require "#{root}/parsie.rb"
-require "#{root}/test/helpers.rb"
-
+require File.dirname(__FILE__)+'/support/common-setup.rb'
 
 module Hipe::Parsie
   describe "grammar tables" do

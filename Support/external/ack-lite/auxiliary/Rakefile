@@ -1,0 +1,11 @@
+require 'ruby-debug'
+require 'rake'
+require 'rake/testtask'
+# can we just leave this file empty for now,
+# just to get the test task?
+
+Rake::TestTask.new do |t|
+  t.libs << "test"
+  t.test_files = FileList['test/test*.rb']
+  t.verbose = true
+end

@@ -4,6 +4,24 @@ module Hipe
     SATISFIED = 2 # == ok?
     WANTS     = 4
     Parses = RegistryList.new
+    class << Parses
+      alias_method :orig_register, :register
+      def register(*args, &block)
+        orig_register(*args, &block)
+      end
+    end
+
+    RootParse = Object.new
+    class << RootParse
+      parse_id = Parses.register(RootParse)
+      send(:define_method, :parse_id){ parse_id }
+      def inspect
+        sprintf('#<%s:%s>','RootParse', parse_id)
+      end
+      alias_method :short, :inspect
+      def depth; 0 end
+    end
+
     Contexts = RegistryList.new
 
     Debug = Object.new
@@ -22,7 +40,132 @@ module Hipe
 
     $p = Parses # shh
 
+    #
+    # a class that includes this must define
+    #   'open' 'satisfied' 'wants'
+    #
+    # if it doesn't already have them, it will get:
+    #   open? satisfied? wants? ok[?] done[?]
+    #   and setters and crap
+    #
+    # this whole thing is begging for a refactor app wide @todo
+    #
+    module Decisioney
+      include Misc # children usually want desc_bool?
+      @meta = {
+        :main_three  => [:wants, :satisfied, :open],
+        :alt_two     => [:ok, :done],
+        :equivalents => [[:satisfied, :ok]],
+        :inverted_equivalents => [[:open, :done]]
+      }
+      @meta[:all_five] = @meta[:main_three] + @meta[:alt_two]
+      class << self
+        attr_reader :meta
+
+        def aliaz_method klass, nu, old
+          if klass.method_defined?(old) && ! klass.method_defined?(nu)
+            klass.send(:alias_method, nu, old)
+          end
+        end
+
+        def dufine_method a, b, &c
+          unless a.method_defined? b
+            a.send(:define_method, b, &c)
+          end
+        end
+
+        def included klass
+
+          # make aliases for getters and setters only when ..
+          meta[:equivalents].each do |(get1, get2)|
+            set1, set2 = "#{get1}=", "#{get2}="
+            aliaz_method klass, set2, set1
+            aliaz_method klass, get2, get1
+          end
+
+          # ridiculous inverted crap
+          meta[:inverted_equivalents].each do |(get1, get2)|
+            set1, set2 = "#{get1}=", "#{get2}="
+            dufine_method(klass, get2){ ! send(get1) }
+            dufine_method(klass, set2){ |bool| send(set1, !bool) }
+          end
+
+          meta[:all_five].each do |fug|
+            question_form = "#{fug}?"
+            unless klass.method_defined? question_form
+              klass.send :alias_method, question_form, fug
+            end
+          end
+        end
+      end
+
+      def complete?
+        complete_failure.nil?
+      end
+
+      def complete_failure
+        not_bool = []
+        Decisioney.meta[:main_three].each do |meth|
+          resp = send(meth)
+          unless bool?(resp)
+            not_bool.push [meth, resp]
+          end
+        end
+        not_bool.any? ? not_bool : nil
+      end
+
+      def assert_complete
+        unless complete?
+          no("decision not complete: #{complete_failure.inspect}")
+        end
+      end
+
+      def response
+        want_bit = wants? ? WANTS : 0
+        ok_bit   = ok?    ? SATISFIED : 0
+        open_bit = done?  ? 0 : OPEN
+        want_bit | ok_bit | open_bit
+      end
+
+      def equivalent? other
+        diff(other).empty?
+      end
+
+      def diff other
+        response = {}
+        Decisioney.meta[:main_three].each do |item|
+          left_val, right_val = send(item), other.send(item)
+          if left_val != right_val
+            response[item] = [left_val, right_val]
+          end
+        end
+        response
+      end
+
+      def inspct_for_debugging
+        sprintf('%s%s',
+          wants? ? '___WANTS___' : '_ ',
+          short
+        )
+      end
+    end
+
+    class Response < Struct.new(:wants, :satisfied, :open)
+      include Decisioney
+      def self.[] int
+        No.no("need Fixnum had #{int.class}") unless int.kind_of?(Fixnum)
+        self.new(
+          0 != WANTS & int,
+          0 != SATISFIED & int,
+          0 != OPEN & int
+        )
+      end
+      protected :initialize
+    end
+
+
     class ParseContext
+      include Misc
       @all = RegistryList.new
       class << self
         attr_reader :all
@@ -34,17 +177,24 @@ module Hipe
         @token_locks = Hash.new do |h,k|
           h[k] = Setesque.new(k)
         end
+        @pushbacks = []
       end
       def tic!
         @tic += 1
         @token_locks.each{|(k,arr)| arr.clear }
+        # @pushbacks.clear
       end
-    end
-
-    module Decisioney
-      def insp
-        puts inspct_tiny
-        'done.'
+      def pushback obj
+        if @pushbacks.size > 0
+          no("for now can't take more than one pushback per tic")
+        end
+        @pushbacks.push obj
+      end
+      def pushback_pop
+        @pushbacks.pop
+      end
+      def pushback?
+        @pushbacks.size > 0
       end
     end
 
@@ -76,6 +226,8 @@ module Hipe
     end
 
     module Hookey
+      include Misc # no()
+
       class DefinedHooks
         attr_reader :onces
         def initialize
@@ -98,7 +250,6 @@ module Hipe
         end
       end
 
-      include Misc # no()
       def has_hook_once hook_name
         add_name = "hook_once_#{hook_name}".to_sym
         has_name = "has_any_hook_once_#{hook_name}".to_sym
@@ -129,11 +280,16 @@ module Hipe
       end
     end
 
+
     # a bunch of strictness
     module Childable
       def parent_id
         no("no parent_id. check parent? first") unless @parent_id
         @parent_id
+      end
+      def parent
+        no("no parent_id. check parent? first") unless @parent_id
+        Parses[@parent_id]
       end
       def unset_parent!
         no('no parent to clear. check parent? first') unless @parent_id
@@ -144,15 +300,56 @@ module Hipe
       end
       def parent_id= pid
         no("no") unless pid
-        no("unset parent first") if @parent_id
+        no("parent already set.  unset parent first.") if @parent_id
         @parent_id = pid
+        parent = Parses[pid]
+        if parent.depth.nil?
+          no("to be a parent, you need depth")
+        end
+        @depth = parent.depth + 1
       end
-      def parent
-        no("check parent? first") unless @parent_id
-        Parses[@parent_id]
+      def depth
+        @depth
       end
+      def depth= x
+        @depth = x
+      end
+      def indent; '  '*depth end
       def index_in_parent
         parent.index_of_child self
+      end
+    end
+
+    #
+    # we were avoiding this for some reason but ...
+    #
+    module Parsey
+      include Misc # 'no'
+      def parse_context
+        ParseContext.all[@context_id]
+      end
+      def tic
+        parse_context.tic
+      end
+    end
+
+    module BubbleUppable
+      def bubble_up obj
+        if ! obj.kind_of? PushBack
+          No.no('no for now')
+        end
+        if ! parent?
+          No.no('for now all parses have parent except root parse')
+        end
+        if parent == RootParse
+          parse_context.pushback obj
+        else
+          if parent.respond_to? :bubble_up
+            parent.bubble_up obj
+          else
+            No.no("how come parent no have bubble_up?")
+          end
+        end
       end
     end
 
@@ -165,13 +362,13 @@ module Hipe
       def self.build parse, opts={}
         if opts[:signed_by]
           rm = ""
-          by = opts[:signed_by].inspct_tiny
+          by = opts[:signed_by].short
           by = " removed by #{by}"
         else
           rm = "removed "
           by = ""
         end
-        removed_thing = parse.inspct_tiny
+        removed_thing = parse.short
         str = "tombstone: #{rm}#{removed_thing}#{by}"
         Tombstone.new str
       end
@@ -201,6 +398,6 @@ module Hipe
           return l * "\n   #{ind}"
         end
       end
-    end
-  end
-end
+    end # ParseTree
+  end # Parsie
+end # Hipe
