@@ -1,4 +1,4 @@
-root = File.expand_path(File.dirname(__FILE__))
+root = File.expand_path('../parsie',__FILE__)
 require root + '/general-support.rb'
 require root + '/table-and-tokenizer.rb'
 require root + '/productions.rb'
