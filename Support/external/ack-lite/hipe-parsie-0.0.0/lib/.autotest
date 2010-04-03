@@ -69,7 +69,7 @@ Autotest.add_hook :initialize do |at|
       'test/structured-basic.rb'
     ]
   end
-  at.hipe_add_mapping(/^table-and-tokenizer.rb/) do |f,m|
+  at.hipe_add_mapping(/^table.rb/) do |f,m|
     [ 'test/table.rb'
     ]
   end

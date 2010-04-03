@@ -34,14 +34,14 @@ module Hipe
         self.look = val
         self.true = val
       end
-      def ui= mixed
+      def out= mixed
         @out = mixed
-      end
-      def puts *a
-        out.puts *a
       end
       def out
         @out ||= $stderr
+      end
+      def puts *a
+        out.puts *a
       end
     end
     Debug.true = false

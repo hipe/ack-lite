@@ -1,10 +1,39 @@
+require File.dirname(__FILE__)+'/tokenizers.rb'
+
 module Hipe
-
   module Parsie
+    class Cfg # Context-Free Grammar. (Aliased as 'Grammar' below)
+              # it's just a table with productions and symbol references.
+              # also variously called a 'table' and 'grammar'.
+              # experimentally, it is also the parser (but not the parse)
 
-    class Cfg
+      include Misc
+      @all = Setesque.new
+      class << self
+        attr_reader :all
+        def clear_tables!; @all.clear end
+      end
 
-      def parse! mixed
+      attr_reader :table_name, :productions, :symbols
+
+      def initialize name, &block
+        self.class.all.register(name, self)
+        $g = self #shh
+        @table_name = name
+        @symbols = Setesque.new('symbols'){|id| Productions[id]}
+        @productions = []
+        @current_add_line = 0
+        yield self
+      end
+
+      DefaultOpts = Object.new
+      class << DefaultOpts
+        def notice_stream; $stout end
+        def verbose?;      nil    end
+      end
+
+      def parse! mixed, opts=DefaultOpts
+        process_opts opts
         ctxt = ParseContext.new
         tokenizer = build_tokenizer mixed
         parse = build_start_parse ctxt
@@ -39,80 +68,6 @@ module Hipe
         # sux
         parse.test_context = test_context if parse.respond_to? :test_context=
         parse
-      end
-    end
-
-
-    class StringLinesTokenizer
-      # this is a sandbox for experimenting with tokenizer interface,
-      # for use possibly in something more uselful like in input stream
-      # tokenizer
-      # note that in lemon the lexer calls the parser
-
-      attr_accessor :has_more_tokens
-      def initialize str
-        @lines = str.split("\n")
-        @offset = -1;
-        @last_offset = @lines.length - 1
-      end
-      def peek
-        hypothetical = @offset + 1
-        return nil if hypothetical > @last_offset
-        @lines[hypothetical]
-      end
-      def pop!
-        return nil if @offset > @last_offset
-        @offset += 1 # let it get one past last offset
-        @lines[@offset]
-      end
-      # this is experimental.  if we want to add end-of stack hooks
-      # we should change this to replace_current
-      def push item
-        @lines[@offset] = item
-        @offset -= 1
-        nil
-      end
-      def has_more_tokens?
-        @offset < @last_offset # b/c pop is the only way to go
-      end
-      def describe
-        # assume there was peeking
-        use_offset = @offset + 1
-        if use_offset == -1
-          "at beginning of input"
-        elsif use_offset > @last_offset
-          if @lines.length == 0
-            "and had no input"
-          else
-            "at end of input near "+@lines[@last_offset].inspect
-          end
-        else
-          "near \""+@lines[use_offset]+'"'
-        end
-      end
-    end
-
-    # context-free grammar, also variously called a 'table' and 'gramar' here
-    # experimentally, it is also the parser (but not the parse)
-    class Cfg
-
-      include Misc
-      @all = Setesque.new
-      class << self
-        attr_reader :all
-        def clear_tables!; @all.clear end
-      end
-
-      attr_reader :table_name, :productions, :symbols
-
-      def initialize name, &block
-        self.class.all.register(name, self)
-        $g = self #shh
-        @table_name = name
-        @symbols = Setesque.new('symbols'){|id| Productions[id]}
-        @productions = []
-        @current_add_line = 0
-        yield self
       end
 
       def symbol name
@@ -223,13 +178,6 @@ module Hipe
         prod
       end
 
-      def build_tokenizer mixed
-        case mixed
-        when String; StringLinesTokenizer.new(mixed)
-        else raise ParseParseFail.new("no: #{mixed.inspect}")
-        end
-      end
-
       def to_bnf opts={}
         show_pids = opts[:pids]
         prerendered = []
@@ -252,6 +200,24 @@ module Hipe
         prerendered.map do |row|
           sprintf("  %-#{col}s ::=  %s.", row[0], row[1])
         end * "\n"
+      end
+
+    private
+
+      def build_tokenizer mixed
+        case mixed
+        when String; StringLinesTokenizer.new(mixed)
+        else raise ParseParseFail.new("no: #{mixed.inspect}")
+        end
+      end
+
+      def process_opts opts
+        if opts.verbose?
+          Debug.true = true
+          unless opts.notice_stream.nil?
+            Debug.out = opts.notice_stream
+          end
+        end
       end
     end
     Grammar = Cfg       # external alias for readability
