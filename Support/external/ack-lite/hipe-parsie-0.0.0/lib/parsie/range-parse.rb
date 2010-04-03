@@ -80,11 +80,11 @@ module Hipe
         @range.end != -1 && num_satisfied == @range.end
       end
       def look foo
-        puts "#{indent}#{short}.look #{foo.inspect}" if Debug.true?
+        Debug.puts "#{indent}#{short}.look #{foo.inspect}" if Debug.true?
         @last_look = foo
         d = decision(foo)
         if Debug.true?
-          puts("#{indent}#{short}.look #{foo.inspect} was: " <<
+          Debug.puts("#{indent}#{short}.look #{foo.inspect} was: " <<
           d.inspct_for_debugging)
         end
         d.response

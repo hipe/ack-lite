@@ -135,7 +135,7 @@ module Hipe
           if (@children[idx].nil?)
             @children[idx] = prod[idx].build_parse ctxt, self, opts
           else
-            puts("child was already there") if Debug.true?
+            Debug.puts("child was already there") if Debug.true?
           end
         end
         nil
@@ -168,11 +168,11 @@ module Hipe
 
       def look token
         if Debug.look?
-          puts "#{indent}#{short}.look (start) #{token.inspect}"
+          Debug.puts "#{indent}#{short}.look (start) #{token.inspect}"
         end
         d = look_decision(token)
         if Debug.look?
-          puts("#{indent}#{short}.look #{token.inspect} was: "<<
+          Debug.puts("#{indent}#{short}.look #{token.inspect} was: "<<
           d.inspct_for_debugging)
         end
         d.response
@@ -225,7 +225,7 @@ module Hipe
       end
 
       def take! foo
-        puts "#{indent}#{short}.take! #{foo.inspect}" if Debug.true?
+        Debug.puts "#{indent}#{short}.take! #{foo.inspect}" if Debug.true?
         @last_take = foo
         d = look_decision foo
         if ! d.wants?
@@ -252,7 +252,7 @@ module Hipe
         end
 
         if Debug.true?
-          puts( "#{indent}#{short}.take! #{foo.inspect} "<<
+          Debug.puts( "#{indent}#{short}.take! #{foo.inspect} "<<
             "BEFORE HOOKS was: #{d.short} (kept promises)")
         end
 

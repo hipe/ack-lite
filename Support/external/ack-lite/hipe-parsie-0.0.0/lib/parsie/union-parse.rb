@@ -76,7 +76,7 @@ module Hipe
           decision = Decision.new
           list.each do |(child, idx)|
             if child.done?
-              puts "#{$token} adding this index to idx closed: #{idx}" if
+              Debug.puts "#{$token} adding this index to idx closed: #{idx}" if
                 Debug.true?
               decision.idxs_closed << idx
             else
@@ -177,7 +177,7 @@ module Hipe
           wip[:callback].call self, frozen_decision, decision, idx, token
         end
         if Debug.look?
-          puts("#{inspct_tiny}.look_decision on #{token.inspect} was: "<<
+          Debug.puts("#{inspct_tiny}.look_decision on #{token.inspect} was: "<<
                 decision.inspct_tiny)
         end
         decision.assert_complete

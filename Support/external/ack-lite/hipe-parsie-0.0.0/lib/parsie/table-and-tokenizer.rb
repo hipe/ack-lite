@@ -12,7 +12,7 @@ module Hipe
           ctxt.tic!
           $token = token
           if Debug.true?
-            puts "\n\n\nTOKEN: #{token.inspect} (tic #{ctxt.tic})\n\n\n"
+            Debug.puts "\n\n\nTOKEN: #{token.inspect} (tic #{ctxt.tic})\n\n\n"
           end
           resp = parse.look token
           if 0 != WANTS & resp
@@ -20,7 +20,7 @@ module Hipe
             tokenizer.pop!  # do a conditional that runs a hook here
             if ctxt.pushback?
               str = ctxt.pushback_pop.string
-              puts "PUSING BACK: #{str}" if Debug.true?
+              Debug.puts "PUSING BACK: #{str}" if Debug.true?
               tokenizer.push str
             end
           else
