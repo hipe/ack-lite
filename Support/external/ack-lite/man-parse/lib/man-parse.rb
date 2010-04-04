@@ -80,7 +80,7 @@ module Hipe
         @grammar ||= Hash.new do |h,k|
           case k
           when :grammar1
-            new_man_page_grammar1
+            h[k] = new_man_page_grammar1
           else
             fail("sorry we don't have a manpage grammar called #{k.inspect}")
           end
@@ -180,8 +180,8 @@ module Hipe
                   [(1..-1), :not_option_line],
                  :capture => false
           )
-          g.add :not_option_line, /\A(?!OPTION)/ # /(\A(?!OPTION).*)\Z/
-          g.add :options_header, /\AOPTIONS\Z/   # /\A(OPTIONS)\Z/
+          g.add :not_option_line, /\A(?!OPTION)(.*)\Z/ #
+          g.add :options_header, /\A(OPTIONS)\Z/
           g.add :options_list, [:options_list, :option_entry]
           g.add :options_list, :option_entry
 

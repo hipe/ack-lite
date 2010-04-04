@@ -1,22 +1,41 @@
+# shared setup
 require 'minitest/autorun'  # unit and spec
 require 'ruby-debug'
 addme = File.expand_path('../../lib',__FILE__)
 $:.unshift(addme) unless $:.include?(addme)
-
 require 'man-parse'
+class String
+  def cleanup num
+    re = Regexp.new("^#{' '*num}")
+    gsub!(re,'')
+    self
+  end
+end
 
 module Hipe
   module ManParse
     describe self do
-      it "should make request with hash" do
-        foo = <<-HERE.gsub(/^    /,'')
+      it "(test1) should complaing that it is expecting option line" do
+        Parsie::Debug.true = false
+        foo = <<-HERE.cleanup(8)
         slkejfa
         lsejf
         HERE
-        Hipe::Parsie::Debug.true = true
-        g = Commands.grammar[:grammar1]
-        r = g.parse!(foo)
-        debugger; 'x'
+        gram = Commands.grammar[:grammar1]
+        rslt = gram.parse!(foo)
+        rslt.fail.must_match %r{expecting not_option_line or options_header at end of input}
+      end
+
+      it "(test2) should match the options line" do
+        Parsie::Debug.true = false
+        foo = <<-HERE.cleanup(8)
+        abcdef
+        ghijk
+        OPTIONS
+        HERE
+        gram = Commands.grammar[:grammar1]
+        rslt = gram.parse!(foo)
+        rslt.fail.message.must_match %r{expecting main_thing at end of input near \"OPTIONS\"}
       end
     end
   end
