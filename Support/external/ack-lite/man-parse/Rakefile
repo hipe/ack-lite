@@ -1,0 +1,45 @@
+require 'rake/testtask'
+
+task :default => :test
+
+
+desc "hack turns the installed gem into a symlink to this directory"
+
+task :hack do
+  kill_path = %x{gem which man-parse}
+  kill_path = File.dirname(File.dirname(kill_path))
+  new_name  = File.dirname(kill_path)+'/ok-to-erase-'+File.basename(kill_path)
+  FileUtils.mv(kill_path, new_name, :verbose => 1)
+  this_path = File.dirname(__FILE__)
+  FileUtils.ln_s(this_path, kill_path, :verbose => 1)
+end
+
+
+Rake::TestTask.new do |t|
+  t.libs << "test"
+  t.test_files = FileList['test/test*.rb']
+  t.verbose = true
+end
+
+
+require 'rubygems'
+
+begin
+  gem 'jeweler', '~> 1.4'
+  require 'jeweler'
+
+  Jeweler::Tasks.new do |gem|
+    gem.name        = 'man-parse'
+    gem.summary     = 'you know you want to'
+    gem.description = "it's the best"
+    gem.email       = 'chip.malice@gmail.com'
+    gem.homepage    = 'http://github.com/hipe/hipe-alphabet'
+    gem.authors     = [ 'Chip Malice' ]
+    gem.bindir      = 'bin'
+    gem.executables << 'man-parse'
+  end
+
+  Jeweler::GemcutterTasks.new
+rescue LoadError
+  puts 'Jeweler (or a dependency) not available. Install it with: gem install jeweler'
+end
