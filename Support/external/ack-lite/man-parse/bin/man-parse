@@ -1,0 +1,4 @@
+#!/usr/bin/env ruby
+require 'ruby-debug'
+require 'man-parse'
+Hipe::ManParse::Commands.invoke(ARGV)

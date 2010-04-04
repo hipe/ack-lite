@@ -207,8 +207,25 @@ module Hipe
       def build_tokenizer mixed
         case mixed
         when String; StringLinesTokenizer.new(mixed)
-        else raise ParseParseFail.new("no: #{mixed.inspect}")
+        else
+          if looks_like_stack?(mixed)
+            StackTokenizerAdapter[mixed]
+          else
+            these = doesnt_look_like_stack_because(mixed)
+            raise ParseParseFail.new(
+              "Can't build tokenizer from  #{mixed.inspect} because "<<
+              "it is not a string and it doesn't implement "<<
+              oxford_comma(these,' and ')
+            )
+          end
         end
+      end
+
+      %w(
+        looks_like_stack?
+        doesnt_look_like_stack_because
+      ).each do |meth|
+        define_method(meth){|*mix| StackTokenizerAdapter.send(meth,*mix) }
       end
 
       def process_opts opts
