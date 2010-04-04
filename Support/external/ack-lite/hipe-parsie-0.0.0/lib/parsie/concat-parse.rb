@@ -112,8 +112,12 @@ module Hipe
             end
             build_current! opts
           end
-          @ok = (@start_offset >= @satisfied_offset) &&
-            @children[@satisfied_offset].ok?
+          sat = @children[@satisfied_offset]
+          if sat.kind_of?(RecursiveReference)
+            @ok = false # @fixme manparse test2 this is a hack to get it to work
+          else
+            @ok = (@start_offset >= @satisfied_offset) && sat.ok?
+          end
         end
       end
 
