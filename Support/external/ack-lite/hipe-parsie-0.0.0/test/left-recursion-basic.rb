@@ -37,11 +37,11 @@ module Hipe::Parsie
       str.must_equal target
     end
 
-    it "must validate and ins() (2-2)" do
+    it "must validate_down and ins() (2-2)" do
       grammar = self.digits
       parse = grammar.build_start_parse
       RootParse.ui_push
-      RootParse.validate
+      RootParse.validate_down
       str = RootParse.ui_pop
       tgt = /\A      ok.*\n    ok.*\n    ok.*\n  ok.*\Z/
       assert_match(tgt, str)

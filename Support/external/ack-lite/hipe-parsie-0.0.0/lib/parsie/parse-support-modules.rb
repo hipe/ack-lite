@@ -21,8 +21,8 @@ module Hipe
     end
 
     module StrictOkAndDone
-      def done_nil?
-        @done.nil?
+      def done_known?
+        ! @done.nil?
       end
       def done?
         no("asking done when done is nil") if @done.nil?
@@ -31,8 +31,8 @@ module Hipe
       def open?
         ! done?
       end
-      def ok_nil?
-        @ok.nil?
+      def ok_known?
+        ! @ok.nil?
       end
       def ok?
         no("asking ok when ok is nil") if @ok.nil?

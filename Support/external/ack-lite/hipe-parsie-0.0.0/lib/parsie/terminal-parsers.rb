@@ -20,7 +20,7 @@ module Hipe
       def can_have_children?
         false
       end
-      def nil_parse?
+      def is_nil_parse?
         false
       end
       def is_reference?
@@ -30,11 +30,11 @@ module Hipe
       def ins
         ui.puts "#{indent}#{short}"
       end
-      def validate
+      def validate_down
         if (depth != parent.depth+1)
           no("#{short} has bad depth")
         end
-        ui.puts "#{indent}ok (depth: #{depth})#{short}"
+        ui.puts "#{indent}ok down TERMINAL stop (depth: #{depth})#{short}"
       end
     end
 
@@ -49,8 +49,7 @@ module Hipe
       end
       def parse_type; :string end
       def parse_type_short; 'str' end
-      def reset!
-        @parent_id = nil
+      def clear_self!
         @done = @ok = false
       end
       def look token
@@ -113,8 +112,7 @@ module Hipe
       end
       def parse_type; :regexp end
       def parse_type_short; 're' end
-      def reset!
-        @parent_id = nil
+      def clear_self!
         @done = @ok = @md = false
       end
       def expecting

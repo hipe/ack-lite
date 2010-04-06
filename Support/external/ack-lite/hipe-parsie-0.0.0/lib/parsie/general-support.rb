@@ -180,8 +180,8 @@ module Hipe
           parse_type_short,
           symbol_name_for_debugging,
           @parse_id ? @parse_id : object_id,
-          ok_nil? ? 'ok?' : ok? ? 'ok' : '!ok',
-          done_nil? ? 'done?' : done? ? 'done' : '!done'
+          ok_known? ? ( ok? ? 'ok' : '!ok' ) : 'ok?',
+          done_known? ? (done? ? 'done' : '!done') : 'done?'
         )
       end
       # block - true or false whether to skip

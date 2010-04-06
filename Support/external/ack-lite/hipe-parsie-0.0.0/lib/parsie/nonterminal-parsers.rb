@@ -9,11 +9,7 @@ module Hipe
 
     module NonterminalParsey
 
-      # note11: parentable must trump childable so include parent after child
-      # (before in the list!)
-      # http://gnuu.org/2010/03/25/fixing-rubys-inheritance-model/
-      #
-      include NonterminalInspecty, BubbleUppable, Parentable, Childable, Parsey
+      include NonterminalInspecty, BubbleUppable, ParentableAndChildable, Parsey
 
       attr_accessor :last_look
       def production
@@ -34,7 +30,7 @@ module Hipe
         end
         use
       end
-      def nil_parse?
+      def is_nil_parse?
         false
       end
       def is_reference?
@@ -98,17 +94,6 @@ module Hipe
       end
       def can_have_children?
         true
-      end
-      def index_of_child child
-        found = false
-        @children.each_with_index do |c,i|
-          if c == child
-            found = i
-            break;
-          end
-        end
-        no("child not found") unless found
-        found
       end
     private
       def cache_look_decision(token, decision)

@@ -76,11 +76,17 @@ module Hipe
       def ok?
         num_satisfied >= @range.begin
       end
+      def ok_known?
+        true
+      end
       def is_last? num
         @range.end != -1 && num >= @range.end
       end
       def done?
         @range.end != -1 && num_satisfied == @range.end
+      end
+      def done_known?
+        true
       end
       def look foo
         Debug.puts "#{indent}#{short}.look #{foo.inspect}" if Debug.verbose?
@@ -196,7 +202,7 @@ module Hipe
           end
           if ! child_resp.open?
             if false==@opts[:capture]
-              current.reset!
+              current.clear_self!
               if @tic
                 @num_satisfied += 1
               else
@@ -227,6 +233,10 @@ module Hipe
           block.call(child, idx)
         end
         nil
+      end
+
+      def each_child &block
+        each_existing_child(&block)
       end
 
       def inspct(ic=InspectContext.new, opts={})

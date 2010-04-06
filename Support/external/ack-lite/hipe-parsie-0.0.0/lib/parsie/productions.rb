@@ -203,8 +203,7 @@ module Hipe
               self, ctxt, parse_class, opts
             )
           else
-            rslt = RecursiveReference.new @building_this_parser
-            rslt.parent_id = parent.parse_id
+            rslt = RecursiveReference.new @building_this_parser, parent
           end
         else
           parser = parse_class.new(self, ctxt, parent, &block) #:note2

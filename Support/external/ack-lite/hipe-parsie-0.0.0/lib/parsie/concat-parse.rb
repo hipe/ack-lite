@@ -77,6 +77,14 @@ module Hipe
         @prev_ok = ok?
       end
 
+      def each_existing_child &block
+        idx = first_nil_parse_index_assert
+        (0..idx-1).each do |i|
+          block.call(@children[i], i)
+        end
+        nil
+      end
+
       # @todo i don't know how we should take done etc into acct
       def expecting
         resp = (done? && ok?) ? [] :
@@ -179,7 +187,7 @@ module Hipe
             child = children[idx]
             if child.nil?
               debugger; 'what did you do wrong silly goose?'
-            elsif child.nil_parse?
+            elsif child.is_nil_parse?
               debugger; 'x'
               # these should always be at end? will they?
             else
@@ -256,11 +264,39 @@ module Hipe
       end
 
       def release!
-        reset!
+        clear_self!
+        parent_clear!
         production.release_this_resetted_parse self
       end
 
     private
+
+      # find the index of the first NilParse and assert
+      # the structure. if no children are nil then return
+      # one after the last index.
+      #
+      def first_nil_parse_index_assert
+        idx = @children.index{|x| x.is_nil_parse? }
+        if idx.nil?
+          return @children.length
+        end
+        bad1 = (0..idx-1).map{|i|
+          @children[i].is_nil_parse? ?
+          [i,@children[i]] : nil
+        }.compact
+        bad2 = (idx..@children.length-1).map{|i|
+          @children[i].is_nil_parse? ?
+          nil : [i,  @children[i]]
+        }.compact
+        bads = bad1 + bad2
+        if bads.any? then no(
+          "found nil parses or non where we didn't expect to:" <<
+          "i am #{short} and these are my bad children: " << (
+            bads.map{|b| "at #{b[0]}: #{b[1].short}"}.join(';')
+          )
+        ) end
+        idx
+      end
 
       def build_no_children!
         @start_offset = :the_empty_list
@@ -268,25 +304,24 @@ module Hipe
         @ok = true
       end
 
-      def reset!
-        @parent_id = nil
+      def clear_self!
         @done = @ok = nil
         @current = []
         @ui = nil
         children.each_with_index do |c, i|
-          next if c.nil_parse?
-          if c.kind_of? Reference
+          next if c.is_nil_parse?
+          if c.is_reference?
             c.to_tombstone!
             children[i] = NilParse
           else
-            c.reset!
+            c.clear_self!
           end
         end
       end
 
       def build_this_child_and_keep_going? idx, opts
         child = @children[idx]
-        if child.nil_parse?
+        if child.is_nil_parse?
           child = @children_productions[idx].build_parse(@ctxt, self, opts)
           @children[idx] = child
         end
@@ -313,9 +348,13 @@ module Hipe
         @ok = false
         if start_offset >= satisfied_offset
           sat = children[satisfied_offset]
-          if sat.nil_parse?
+          if sat.is_nil_parse?
             # stay not ok
           elsif sat.is_reference?
+            puts "\n\n"
+            RootParse.ins
+            puts "\n\n"
+            self.validate_around
             debugger; 'help?'
           elsif sat.ok?
             @ok = true

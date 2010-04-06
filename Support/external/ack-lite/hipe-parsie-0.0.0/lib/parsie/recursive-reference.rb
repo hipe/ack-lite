@@ -67,10 +67,13 @@ module Hipe
     class Reference
       include CommonInstanceMethods, Childable
       attr_reader :my_parse_id, :target_parse_id
-      def initialize target_parse
+      def initialize target_parse, parent=nil
         @target_parse_id = target_parse.parse_id
         @my_parse_id = Parses.register self
         @cached_decisions = {}
+        if (parent)
+          self.parent_id = parent.parse_id
+        end
         # we use the above mainly because the look wip callback mechanism
         # doesn't happen in union.take just union.look
       end
@@ -93,8 +96,14 @@ module Hipe
       def short
         "#<#{target.short}>"
       end
-      def nil_parse?
+      def is_nil_parse?
         false
+      end
+      def validate_down
+        if (depth != parent.depth+1)
+          no("#{short} has bad depth")
+        end
+        ui.puts "#{indent}ok down RR (depth: #{depth})#{short}"
       end
       # end common things
 
@@ -116,7 +125,7 @@ module Hipe
       def remove_child node, idx, opts={}
         no('no') unless node.children[idx]
         removed = node.children[idx]
-        removed.unset_parent!
+        removed.parent_clear!
         tomb = Tombstone.build removed, opts
         node.children[idx] = tomb
         removed
@@ -131,7 +140,7 @@ module Hipe
       def replace_child src_parent, src_idx, new_child
         old = src_parent.children[src_idx]
         no('no') unless old
-        old.unset_parent!
+        old.parent_clear!
         new_child.parent_id = src_parent.parse_id
         src_parent.children[src_idx] = new_child
         old
@@ -162,8 +171,8 @@ module Hipe
     #
     class RecursiveReference < Reference
 
-      def initialize target_parse
-        super
+      def initialize target_parse, parent=nil
+        super(target_parse, parent)
         if ! target_parse.kind_of?(UnionParse)
           no("we need to develop this differently if we ever have "<<
              "recursive targets other than UnionParse. "<<
@@ -289,7 +298,7 @@ module Hipe
           no('sukland')
         end
         stolen = remove_child root_union, idx_in_union, :signed_by => concat
-        idx_in_concat = ref.index_in_parent
+        idx_in_concat = ref.index_in_parent_assert
         refo = replace_child concat, idx_in_concat, stolen
         no('no') if refo.object_id != ref.object_id
         refo.parent_id = concat.parse_id
@@ -316,7 +325,7 @@ module Hipe
               end
             )
             new_ref.parent_id = cparse.parse_id # dangerous as all getout
-            cparse.unset_parent! # dumb
+            cparse.parent_clear! # dumb
             ridiculous_new_left_recursive_cparse cparse, new_ref
             idxs_added << add_child(root_union, cparse)
           else

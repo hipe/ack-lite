@@ -12,10 +12,10 @@ module Hipe::Parsie
   describe "bad idea - 11" do
     extend SpecExtension
 
-    it "(11-1) validate must be valid" do
+    it "(11-1) validate_down must be valid" do
       parse = evil_grammar.build_start_parse
       RootParse.ui_push
-      parse.validate
+      parse.validate_down
       str = RootParse.ui_pop
       bad = str.grep(/^ *(?! |ok)/)
       all = str.split(/\n/)
@@ -38,11 +38,6 @@ module Hipe::Parsie
     skipit "(11-5) i am filled with anger" do
       Debug.verbose = true
       parse = evil_grammar.build_start_parse
-
-      debugger; 'x'
-
-
-
       foo = <<-HERE.cleanup(6)
       foobric
       barbric
@@ -98,8 +93,8 @@ module Hipe::Parsie
                 ([_a-z]+=[_a-z]+)                  # that crazy ffmpeg key-value thing
               )
             )?
-            \b\s*
-        /xi
+            \b\s*                                  # eat remaining w-s
+        /xi                                        # case insensitive, allow whitespace in re
         g.add :content_lines, [:content_lines, :content_line]
         g.add :content_lines, :content_line
         g.add :content_line, /\A[[:space:]]{14}([^[:space:]].*)\Z/

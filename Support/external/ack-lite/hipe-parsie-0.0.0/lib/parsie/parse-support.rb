@@ -50,11 +50,11 @@ module Hipe
 
     # some things (concat parse?) don't make parse objects until they
     # have to, but still we want something there in the slot for debugging
-    # and easier implementation of aggregate and cascase functions
+    # and easier implementation of aggregate and cascade functions
     #
     class NilParseClass
       include Singleton
-      def nil_parse?
+      def is_nil_parse?
         true
       end
       def inspect
@@ -88,7 +88,11 @@ module Hipe
       def only_child
         @only_child
       end
-      %w(validate insp cascade).each do |meth|
+      def only_child_assert
+        no("no") unless @only_child
+        @only_child
+      end
+      %w(validate_down insp cascade).each do |meth|
         define_method(meth){|*a,&b| only_child.send(meth,*a,&b) }
       end
       def ins
@@ -118,6 +122,9 @@ module Hipe
           ret = ret.read
         end
         ret
+      end
+      def each_existing_child &b
+        block.call(only_child_assert, 0)
       end
     end
     RootParse = RootParseClass.instance

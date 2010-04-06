@@ -8,24 +8,47 @@ module Hipe
       # will be overridden when necesary
       def each_existing_child &block
         children.each_with_index do |child, idx|
+          if child.is_nil_parse? then no(
+            "NilParse found in call do each_existing_child(). "<<
+            "fix this for #{short}"
+          ) end
           block.call(child, idx)
         end
         nil
+      end
+      def each_child &block
+        children.each_with_index do |child, idx|
+          block.call(child, idx)
+        end
+        nil
+      end
+      def index_of_child_assert child
+        found = false
+        each_existing_child do |c,i|
+          if c == child
+            found = i
+            break;
+          end
+        end
+        unless found
+          no("this is no child of mine #{child.short} (parent is #{self.short})")
+        end
+        found
       end
       def num_children
         children.size
       end
       def cascade &block
         block.call(self)
-        cascade_to_children &block
+        cascade_to_children(&block)
       end
       def ins foo=nil
         ui_push(foo) if foo
         num = num_children
         num = (num==0) ? '(0)' : "(#{num}):"
         ui.puts "#{indent}#{short}#{num}"
-        each_existing_child do |child, idx|
-          if child.nil_parse?
+        each_child do |child, idx|
+          if child.is_nil_parse?
             ui.puts "#{Inspecty::Indent * (depth + 1)}#{child.short}"
           else
             child.ins
@@ -38,28 +61,25 @@ module Hipe
         end
         ret
       end
-      def validate_children
+      def validate_down
         num = 0
         each_existing_child do |child, idx|
-          if child.kind_of?(Childable)
-            if child.parent != self
-              fuck = <<-HERE.gsub(/^ */,'')
-              failed totally at life.
-              i am #{short}, i have a child #{child.short} at index #{idx}
-              who thinks his parent is #{child.parent.short}.
-              How did this happen you dumb fuck.
-              HERE
-              no(fuck)
-            else
-              num += 1
-            end
-            child.validate
+          if child.parent != self
+            fuck = <<-HERE.gsub(/^ */,'')
+            failed totally at life.
+            i am #{short}, i have a child #{child.short} at index #{idx}
+            who thinks his parent is #{child.parent.short}.
+            How did this happen you dumb fuck.
+            HERE
+            no(fuck)
+          else
+            num += 1
           end
+          child.validate_down
         end
-        ui.puts "#{indent}ok (num children: #{num})#{short}"
+        ui.puts "#{indent}ok down (num children: #{num})#{short}"
       end
       # implementing class can override this, sure, but still call validate children!
-      alias_method :validate, :validate_children
 
     private
       def cascade_to_children &block
@@ -88,17 +108,20 @@ module Hipe
     end
 
     # a bunch of strictness
-    # avoid making a validate() here to avoid confusion
     module Childable
       def parent_id
-        no("no parent_id. check parent? first") unless @parent_id
+        unless @parent_id
+          no("no parent_id. check parent? first in #{short}")
+        end
         @parent_id
       end
       def parent
-        no("no parent_id. check parent? first") unless @parent_id
+        unless @parent_id
+          no("no parent_id. check parent? first in #{short}")
+        end
         Parses[@parent_id]
       end
-      def unset_parent!
+      def parent_clear!
         no('no parent to clear. check parent? first') unless @parent_id
         @parent_id = nil
       end
@@ -131,11 +154,35 @@ module Hipe
         @depth = x
       end
       def indent; '  '*depth end
-      def index_in_parent
-        parent.index_of_child self
+      def index_in_parent_assert
+        parent.index_of_child_assert self
       end
       def cascade &block
         block.call(self)
+      end
+      # there is a hole here in that it assumes all childable are parentable
+      # but we want to leave it as it in instead of including childable
+      # in parentable
+      #
+      def validate_up
+        index_in_parent_assert
+        parent.validate_up
+        ui.puts "#{indent}ok child is in parent (#{short} in #{parent.short})"
+      end
+    end
+    module ParentableAndChildable
+      # note11: parentable must trump childable so include parent after child
+      # (before in the list!)
+      # http://gnuu.org/2010/03/25/fixing-rubys-inheritance-model/
+      #
+      include Parentable, Childable
+
+      # this is only a starting point this must not be called by
+      # other validate functions
+      #
+      def validate_around
+        validate_down
+        validate_up
       end
     end
   end
