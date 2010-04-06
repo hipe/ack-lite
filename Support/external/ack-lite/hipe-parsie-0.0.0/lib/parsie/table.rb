@@ -48,12 +48,6 @@ module Hipe
         def verbose?;      nil    end
       end
 
-      def validate
-        ctxt = ParseContext.new
-        parse = build_start_parse ctxt
-        parse.validate
-      end
-
       def parse! mixed, opts=DefaultOpts
         process_opts opts
         ctxt = ParseContext.new

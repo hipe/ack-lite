@@ -22,6 +22,10 @@ module Hipe
         my_production.respond_to?(:symbol_name) ?
           my_production.symbol_name : false
       end
+      # not sure if this should be @num_satisfied or @parses_satisfied
+      def num_children
+        @parses_satisfied.size
+      end
       def update_current_to_reflect_decision! d
         no('no') if d.current_wants?
         no('no') unless d.next_wants?

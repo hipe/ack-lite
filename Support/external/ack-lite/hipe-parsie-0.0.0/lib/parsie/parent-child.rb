@@ -17,23 +17,26 @@ module Hipe
       end
       def cascade &block
         block.call(self)
-        each_existing_child do |c, idx|
-          c.cascade(&block)
-        end
-        nil
+        cascade_to_children &block
       end
-      def ins
+      def ins foo=nil
+        ui_push(foo) if foo
         num = num_children
         num = (num==0) ? '(0)' : "(#{num}):"
-        ui.puts "#{Inspecty::Indent*depth}#{short}#{num}"
-        children.each do |child|
+        ui.puts "#{indent}#{short}#{num}"
+        each_existing_child do |child, idx|
           if child.nil_parse?
-            ui.puts "#{Inspecty::Indent*(depth+1)}#{child.short}"
+            ui.puts "#{Inspecty::Indent * (depth + 1)}#{child.short}"
           else
             child.ins
           end
         end
-        nil
+        if foo
+          ret = ui_pop
+        else
+          ret = nil
+        end
+        ret
       end
       def validate_children
         num = 0
@@ -57,6 +60,31 @@ module Hipe
       end
       # implementing class can override this, sure, but still call validate children!
       alias_method :validate, :validate_children
+
+    private
+      def cascade_to_children &block
+        each_existing_child do |c, idx|
+          c.cascade(&block)
+        end
+        nil
+      end
+      def ui_push foo
+        cascade_to_children{ |x| x.ui_clear! }
+        @uis ||= []
+        @uis.push(@ui)
+        @ui = foo
+        nil
+      end
+      def ui_pop(do_string_io = true)
+        cascade_to_children{ |x| x.ui_clear! }
+        ret = @ui
+        @ui = @uis.pop
+        if ret.kind_of?(StringIO)
+          ret.rewind
+          ret = ret.read
+        end
+        ret
+      end
     end
 
     # a bunch of strictness
