@@ -16,12 +16,12 @@ module Hipe::Parsie
         end
     end
 
-    it "should build the grammar (1)" do
+    it "must build the grammar (1)" do
       g = digits
       assert_kind_of(Grammar, g)
     end
 
-    it "should do to_bnf (2)" do
+    it "must do to_bnf (2)" do
       g = Grammar.new('grammar for bnf') do |g|
         g.add :list, [:list, :digit]
         g.add :list, :digit
@@ -37,15 +37,29 @@ module Hipe::Parsie
       str.must_equal target
     end
 
-    it "should do inspct (3)" do
-      digits = self.digits
-      sym = digits.symbol(:list)
-      par = sym.build_parse(ParseContext.new, RootParse)
-      target = /.*UnionParse.*ConcatParse.*RecursiveReference.*RegexpParse.*/m
-      str = par.inspct
-      str.must_match target
+    it "must validate and ins() (2-2)" do
+      grammar = self.digits
+      parse = grammar.build_start_parse
+      RootParse.ui_push
+      RootParse.validate
+      str = RootParse.ui_pop
+      tgt = /\A      ok.*\n    ok.*\n    ok.*\n  ok.*\Z/
+      assert_match(tgt, str)
+
+      RootParse.ui_push
+      RootParse.ins
+      str = RootParse.ui_pop
+      tgt = /\A\s{0}[^ ].+\n {2}[^ ].+\n {4}[^ ].+\n {6}[^ ].+\n {6}[^ ].+\n {4}[^ ].+\Z/
+      assert_match(tgt, str)
     end
 
+    it "should do inspct (3)" do
+      grammar = self.digits
+      parse = grammar.build_start_parse
+      tgt = /.*UnionParse.*ConcatParse.*RecursiveReference.*RegexpParse.*/m
+      str = parse.inspct
+      assert_match(tgt, str)
+    end
 
     it "should do empty (4)" do
       digits.parse!("").must_fail(

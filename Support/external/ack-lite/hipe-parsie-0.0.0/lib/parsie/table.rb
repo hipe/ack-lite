@@ -2,16 +2,31 @@ require File.dirname(__FILE__)+'/tokenizers.rb'
 
 module Hipe
   module Parsie
-    class Cfg # Context-Free Grammar. (Aliased as 'Grammar' below)
-              # it's just a table with productions and symbol references.
-              # also variously called a 'table' and 'grammar'.
-              # experimentally, it is also the parser (but not the parse)
+    class Cfg  # Context-Free Grammar. (Aliased as 'Grammar' below)
+               # it's just a table with productions and symbol references.
+               # also variously called a 'table' and 'grammar'.
+               # experimentally, it is also the parser (but not the parse)
 
-      include Misc
+      include CommonInstanceMethods
       @all = Setesque.new
       class << self
         attr_reader :all
-        def clear_tables!; @all.clear end
+        attr_accessor :ui
+        def ui # this is where the buck actually stops
+          @ui ||= $stdout
+        end
+        def clear_tables!
+          @all.clear
+        end
+        def ins
+          all.each do |cfg, key|
+            if cfg.nil?
+              ui.puts "#{key.inspect} : #{cfg.inspect}"
+            else
+              cfg.ins
+            end
+          end
+        end
       end
 
       attr_reader :table_name, :productions, :symbols
@@ -23,6 +38,7 @@ module Hipe
         @symbols = Setesque.new('symbols'){|id| Productions[id]}
         @productions = []
         @current_add_line = 0
+        @start_symbol_name = nil
         yield self
       end
 
@@ -30,6 +46,12 @@ module Hipe
       class << DefaultOpts
         def notice_stream; $stout end
         def verbose?;      nil    end
+      end
+
+      def validate
+        ctxt = ParseContext.new
+        parse = build_start_parse ctxt
+        parse.validate
       end
 
       def parse! mixed, opts=DefaultOpts
@@ -40,7 +62,7 @@ module Hipe
         while ( ! parse.done? ) && ( token = tokenizer.peek )
           ctxt.tic!
           $token = token
-          if Debug.true?
+          if Debug.verbose?
             Debug.puts "\n\n\nTOKEN: #{token.inspect} (tic #{ctxt.tic})\n\n\n"
           end
           resp = parse.look token
@@ -49,7 +71,7 @@ module Hipe
             tokenizer.pop!  # do a conditional that runs a hook here
             if ctxt.pushback?
               str = ctxt.pushback_pop.string
-              Debug.puts "PUSING BACK: #{str}" if Debug.true?
+              Debug.puts "PUSING BACK: #{str}" if Debug.verbose?
               tokenizer.push str
             end
           else
@@ -71,14 +93,14 @@ module Hipe
       end
 
       def symbol name
-        @symbols.retrieve name
+        symbols.retrieve name
       end
 
       # adds a production rule, merging it into
       # or creating a union if necessary
       def add symbol_name, mixed, opts={}, &block
         @current_add_line += 1
-        @start_symbol_name = symbol_name if @symbols.size == 0
+        @start_symbol_name = symbol_name if symbols.size == 0
         prod = nil
         begin
           prod = build_production mixed, nil, opts, &block
@@ -89,15 +111,15 @@ module Hipe
         prod.table_name = @table_name
         prod.symbol_name = symbol_name
         prod_id = prod.production_id
-        if ! @symbols.has? symbol_name
-          @symbols.register symbol_name, prod_id
+        if ! symbols.has? symbol_name
+          symbols.register symbol_name, prod_id
         else
           symbol_production = self.symbol(symbol_name)
           if symbol_production.kind_of? UnionSymbol
             union_symbol = symbol_production
             union_symbol.add prod
           else
-            @symbols.remove(symbol_name)
+            symbols.remove(symbol_name)
             union = UnionSymbol.new(symbol_production)
             prod_id2 = Productions.register union
             add_prod union
@@ -105,7 +127,7 @@ module Hipe
             union.production_id = prod_id2
             union.table_name = @table_name
             union.add prod
-            @symbols.register(symbol_name, prod_id2)
+            symbols.register(symbol_name, prod_id2)
           end
         end
         nil
@@ -132,8 +154,15 @@ module Hipe
 
       # the argument is given a default just for testing
       def build_start_parse ctxt= ParseContext.new
-        p = symbol(@start_symbol_name).build_parse(ctxt, RootParse)
-        p
+        base_production = symbol(start_symbol_name)
+        # we set the root parse child in a hook so that we can
+        # inspect it as soon as possible, before the node builds its children
+        parse = base_production.build_parse(ctxt, RootParse) do |p|
+          p.after_gets_parse_id do |pp|
+            RootParse.only_child = pp
+          end
+        end
+        parse
       end
 
       def reference_check
@@ -189,7 +218,7 @@ module Hipe
           "productions, not #{fail.inspect}")
         end
         productions.each do |p|
-          next if p.kind_of? UnionSymbol # depends note1
+          next if p.kind_of? UnionSymbol # depends on :note1
           strname = p.symbol_name.to_s
           strname = "(##{p.production_id}) #{strname}" if show_pids
           len = strname.length
@@ -203,6 +232,18 @@ module Hipe
       end
 
     private
+
+      def start_symbol_name?
+        ! @start_symbol_name.nil?
+      end
+
+      def start_symbol_name
+        unless @start_symbol_name
+          fail("no start symbol (empty grammar?).  "<<
+          "use start_symbol_name? to check first")
+        end
+        @start_symbol_name
+      end
 
       def build_tokenizer mixed
         case mixed
@@ -230,13 +271,13 @@ module Hipe
 
       def process_opts opts
         if opts.verbose?
-          Debug.true = true
+          Debug.verbose = true
           unless opts.notice_stream.nil?
             Debug.out = opts.notice_stream
           end
         end
       end
-    end
+    end # Cfg
     Grammar = Cfg       # external alias for readability
-  end
-end
+  end # Parsie
+end # Hipe

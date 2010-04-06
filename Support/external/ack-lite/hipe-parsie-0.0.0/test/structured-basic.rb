@@ -88,8 +88,6 @@ module Hipe::Parsie
     end
 
     it "trailing options (10)" do
-      # Debug.look = true
-      # Debug.true = true
       trailing_opts.parse!("go\nthere").must_fail(
         "expecting \"away\" near \"there\""
       )

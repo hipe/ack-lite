@@ -2,27 +2,28 @@ module Hipe
   module Parsie
     class UnionParse
 
-      include NonterminalParsey, NonterminalInspecty, FaileyMcFailerson,
-        StrictOkAndDone, Childable
+      include NonterminalParsey
 
       extend Hookey
-
       has_hook_once :after_union_take!
+      has_hook_once :after_gets_parse_id, :set_hook_with=>:after_gets_parse_id
 
       attr_reader :parse_id # make sure this is set in constructor
       attr_reader :children # debug gin
 
-      # note2 - this is only called in one place
-      def initialize union, ctxt, parent
-        @parse_id = Parses.register self
-        self.parent_id = parent.parse_id
-        locks_init
+      # note2: union symbols are only constructed in this one place
+      def initialize union, ctxt, parent, &block
+        block.call(self) if block_given?
         @production_id = union.production_id
         @context_id = ctxt.context_id
         @done = nil; @ok = nil
         # in the running is an *ordered* list of ids (ordered by precedence)
         # that are not done (still accepting). doesn't matter if they are ok
         @in_the_running = false
+        self.parent_id = parent.parse_id
+        @parse_id = Parses.register self
+        run_hook_onces_after_gets_parse_id{|hook| hook.call(self) }
+        locks_init
       end
       def parse_type; :union end
       def parse_type_short; 'u' end
@@ -30,17 +31,18 @@ module Hipe
       def build_children! opts={}
         context = parse_context
         children_productions = production.children
-        @children = AryExt[Array.new]
+        @children = ArrayExtra[[]]
         children_productions.each_with_index do |child_production,idx|
-          child = nil
-          if opts[:child_hook]
-            child = opts[:child_hook].call(self, child_production, idx, opts)
-          else
-            child = child_production.build_parse(context, RootParse)
-          end
-          if :skip_child != child
-            @children << child
-          end
+          # child = nil # @todo cleanup
+          # if opts[:chil d_hook]
+          # child = opts[:chil d_hook].call(self, child_production, idx, opts)
+          # else
+          child = child_production.build_parse(context, self)
+          @children << child
+          # end
+          # if :skip_child != child
+          #   @children << child
+          # end
         end
         @in_the_running = (0..@children.length-1).map
         decided! Decision.based_on(in_the_running)
@@ -55,7 +57,7 @@ module Hipe
         def satisfied;  self.idxs_satisfied.size > 0 end
         def wants;      self.idxs_want.size > 0      end
 
-        include Decisioney, Misc # desc_bool
+        include Decisioney, CommonInstanceMethods
 
         class << self
           def main_props
@@ -77,7 +79,7 @@ module Hipe
           list.each do |(child, idx)|
             if child.done?
               Debug.puts "#{$token} adding this index to idx closed: #{idx}" if
-                Debug.true?
+                Debug.verbose?
               decision.idxs_closed << idx
             else
               decision.idxs_open << idx
@@ -283,9 +285,9 @@ module Hipe
         terminals = []
         non_empty_non_terminals = []
         winners.each_with_index do |winner, idx|
-          if winner.kind_of? Terminesque
+          if winner.kind_of? TerminalParsey
             terminals << idx
-          elsif winner.kind_of?(ConcatParse) && winner.children.size == 0
+          elsif winner.kind_of?(ConcatParse) && winner.is_the_empty_list?
               # discount it
           else
             non_empty_non_terminals << idx

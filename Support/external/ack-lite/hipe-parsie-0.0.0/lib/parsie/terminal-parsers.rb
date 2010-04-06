@@ -1,8 +1,9 @@
 module Hipe
   module Parsie
 
-    module Terminesque
-      include Misc, FaileyMcFailerson, StrictOkAndDone, Inspecty, Childable
+    module TerminalParsey
+      include Parsey, Inspecty, Childable
+
       def production
         Productions[@production_id]
       end
@@ -16,10 +17,29 @@ module Hipe
       def release!
         procution.release self
       end
+      def can_have_children?
+        false
+      end
+      def nil_parse?
+        false
+      end
+      def is_reference?
+        false
+      end
+      # needs childable below
+      def ins
+        ui.puts "#{indent}#{short}"
+      end
+      def validate
+        if (depth != parent.depth+1)
+          no("#{short} has bad depth")
+        end
+        ui.puts "#{indent}ok (depth: #{depth})#{short}"
+      end
     end
 
     class StringParse
-      include Terminesque
+      include TerminalParsey
       def initialize prod, ctxt, parent
         self.parent_id = parent.parse_id
         @string = prod.string_literal
@@ -80,7 +100,7 @@ module Hipe
     end
 
     class RegexpParse
-      include Terminesque, Inspecty
+      include TerminalParsey
       attr_accessor :md
       def initialize production, ctxt, parent
         self.parent_id = parent.parse_id

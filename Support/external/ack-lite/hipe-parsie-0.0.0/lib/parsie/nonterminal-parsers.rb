@@ -8,7 +8,14 @@ module Hipe
     # for parsers - nonterminals
 
     module NonterminalParsey
-      include Parsey, BubbleUppable
+
+      # note11: parentable must trump childable so include parent after child
+      # (before in the list!)
+      # http://gnuu.org/2010/03/25/fixing-rubys-inheritance-model/
+      #
+      include NonterminalInspecty, BubbleUppable, Parentable, Childable, Parsey
+
+      attr_accessor :last_look
       def production
         Productions[@production_id]
       end
@@ -26,6 +33,12 @@ module Hipe
           end
         end
         use
+      end
+      def nil_parse?
+        false
+      end
+      def is_reference?
+        false
       end
       def unparse
         _unparse(rslt = [])
@@ -82,6 +95,9 @@ module Hipe
         end
         @lock[type] = false
         nil
+      end
+      def can_have_children?
+        true
       end
       def index_of_child child
         found = false

@@ -1,7 +1,7 @@
 module Hipe
   module Parsie
 
-    module Misc
+    module CommonInstanceMethods
       def bool? mixed
         [TrueClass,FalseClass].include? mixed.class
       end
@@ -21,7 +21,7 @@ module Hipe
     end
 
     module AttrAccessors
-      include Misc
+      include CommonInstanceMethods
       def boolean_accessor *names
         names.each do |name|
           setter_name = "#{name}="
@@ -43,7 +43,7 @@ module Hipe
       end
     end
 
-    module AryExt
+    module ArrayExtra
       def self.[] ary
         ary.extend self
       end
@@ -65,32 +65,46 @@ module Hipe
     end
 
     class Setesque
-      include Misc
-      class Enumerator
-        include Enumerable
-        def initialize settie
-          @thing = settie
-        end
-        def each
-          @thing.each do |p|
-            obj = @thing.retrieve p[0]
-            yield [p[0], obj]
-          end
-        end
-      end
+      include CommonInstanceMethods
+      #class Enumerator
+      #  include Enumerable
+      #  def initialize settie
+      #    @thing = settie
+      #  end
+      #  def each
+      #    @thing.each do |p|
+      #      obj = @thing.retrieve p[0]
+      #      yield [p[0], obj]
+      #    end
+      #  end
+      #end
       def initialize(name = 'set',&retrieve_block)
         @name = name
         @children = {}
-        @retrieve_block = retrieve_block
-        if @retrieve_block
-          md = /\A(.+)@(.+)\Z/.match(@retrieve_block.to_s)
-          me = "#{md[1]}@#{File.basename(md[2])}"
-          class << @retrieve_block; self end.send(:define_method,:inspect){me}
+        @order = []
+        if retrieve_block
+          @retrieve_block = retrieve_block
+          if @retrieve_block
+            md = /\A(.+)@(.+)\Z/.match(@retrieve_block.to_s)
+            me = "#{md[1]}@#{File.basename(md[2])}"
+            class << @retrieve_block; self end.send(:define_method,:inspect){me}
+          end
+        else
+          @retrieve_block = proc{|key|
+            @children[key]
+          }
         end
       end
       def [] key; @children[key] end
       def retrieve key
         @retrieve_block.call @children[key]
+      end
+      def each &block
+        @order.each do |k|
+          thing = retrieve(k)
+          block.call(thing, k)
+        end
+        nil
       end
       def objects
         Enumerator.new self
@@ -99,6 +113,7 @@ module Hipe
       def register key, obj
         no(%{won't redefine "#{key}" grammar}) if
           @children.has_key? key
+        @order.push(key)
         @children[key] = obj
         nil
       end
@@ -110,17 +125,24 @@ module Hipe
       end
       def remove key
         no("no") unless @children.has_key? key
+        @order.delete(key)
         @children.delete(key)
       end
-      def clear; @children.clear end
-      def size; @children.size end
-      def keys; @children.keys end
-
+      def clear
+        @children.clear
+        @order.clear
+      end
+      def size
+        @children.size
+      end
+      def keys
+        @order
+      end
     end
 
     class RegistryList
       include Enumerable # hm
-      def initialize; @children = AryExt[[]] end
+      def initialize; @children = ArrayExtra[[]] end
       def [] idx; @children[idx] end
       def register obj
         @children << obj
@@ -140,19 +162,26 @@ module Hipe
     end
 
     # used in terminal and nonterminal parses
+    # must respond to ui()
     module Inspecty
+      Indent = '  '
       def class_basename
         Inspecty.class_basename(self.class)
       end
       def self.class_basename cn
         cn.to_s.split('::').last
       end
-      def insp; $stdout.puts inspct; 'done.' end
+      def insp
+        ui.puts inspct
+        'done.'
+      end
       def short
-        sprintf('<#%s:%s#%s>',
+        sprintf('#<%s:%s#%s(%s,%s)>',
           parse_type_short,
           symbol_name_for_debugging,
-          @parse_id ? @parse_id : object_id
+          @parse_id ? @parse_id : object_id,
+          ok_nil? ? 'ok?' : ok? ? 'ok' : '!ok',
+          done_nil? ? 'done?' : done? ? 'done' : '!done'
         )
       end
       # block - true or false whether to skip

@@ -1,38 +1,38 @@
+require 'singleton'
+require File.dirname(__FILE__)+'/hookey.rb'
+require File.dirname(__FILE__)+'/parse-support-modules.rb'
+
 module Hipe
   module Parsie
+
+    # constants for status codes (will be removed :note12)
+    #
     OPEN      = 1 # == ! done?
     SATISFIED = 2 # == ok?
     WANTS     = 4
+
+
+    # collections of things
+    #
     Parses = RegistryList.new
-    class << Parses
-      alias_method :orig_register, :register
-      def register(*args, &block)
-        orig_register(*args, &block)
-      end
-    end
-
-    RootParse = Object.new
-    class << RootParse
-      parse_id = Parses.register(RootParse)
-      send(:define_method, :parse_id){ parse_id }
-      def inspect
-        sprintf('#<%s:%s>','RootParse', parse_id)
-      end
-      alias_method :short, :inspect
-      def depth; 0 end
-    end
-
     Contexts = RegistryList.new
 
-    Debug = Object.new
-    class << Debug
-      def true?; @true end
-      def true= val; @true = val end
+
+    # global debugging settings
+    #
+    class DebugClass
+      include Singleton
+      def initialize
+        @verbose = false
+        @look = false
+      end
+      def verbose?; @verbose end
+      def verbose= val; @verbose = val end
       def look?; @looks end
       def look= val; @looks = val end
       def all= val
         self.look = val
-        self.true = val
+        self.verbose = val
       end
       def out= mixed
         @out = mixed
@@ -41,13 +41,87 @@ module Hipe
         @out ||= $stderr
       end
       def puts *a
-        out.puts *a
+        out.puts(*a)
       end
     end
-    Debug.true = false
-    Debug.look = false
+    Debug = DebugClass.instance
 
-    $p = Parses # shh
+
+
+    # some things (concat parse?) don't make parse objects until they
+    # have to, but still we want something there in the slot for debugging
+    # and easier implementation of aggregate and cascase functions
+    #
+    class NilParseClass
+      include Singleton
+      def nil_parse?
+        true
+      end
+      def inspect
+        '#<NilParse>'
+      end
+      alias_method :short, :inspect
+      def cascade; end
+    end
+    NilParse = NilParseClass.instance
+
+
+    # experimentally all parsers (maybe) will have a parent parser
+    # except the RootParse.  This makes some things easier.
+    #
+    class RootParseClass
+      include Singleton
+      attr_reader :parse_id
+      def initialize
+        @parse_id = Parses.register(self)
+        @uis = []
+      end
+      def short
+        sprintf('#<%s:%s>','RootParse', parse_id)
+      end
+      def depth
+        0
+      end
+      def only_child= foo
+        @only_child = foo
+      end
+      def only_child
+        @only_child
+      end
+      %w(validate insp cascade).each do |meth|
+        define_method(meth){|*a,&b| only_child.send(meth,*a,&b) }
+      end
+      def ins
+        num = only_child.nil? ? '(0)' : '(1):'
+        ui.puts "#{' '*depth}#{short}#{num}"
+        if only_child.nil?
+          ui.puts "  NilClass"
+        else
+          only_child.ins
+        end
+      end
+      def ui # topmost ui in the parse tree
+        @ui ||= Cfg.ui
+      end
+      def ui_push foo=StringIO.new
+        only_child.cascade{|x| x.ui_clear! }
+        @uis.push(@ui)
+        @ui = foo
+        nil
+      end
+      def ui_pop(do_string_io = true)
+        only_child.cascade{|x| x.ui_clear! }
+        ret = @ui
+        @ui = @uis.pop
+        if ret.kind_of?(StringIO)
+          ret.rewind
+          ret = ret.read
+        end
+        ret
+      end
+    end
+    RootParse = RootParseClass.instance
+
 
     #
     # a class that includes this must define
@@ -60,7 +134,7 @@ module Hipe
     # this whole thing is begging for a refactor app wide @todo
     #
     module Decisioney
-      include Misc # children usually want desc_bool?
+      include CommonInstanceMethods # children usually want desc_bool?
       @meta = {
         :main_three  => [:wants, :satisfied, :open],
         :alt_two     => [:ok, :done],
@@ -159,6 +233,9 @@ module Hipe
       end
     end
 
+    # note12: one day we might refactor the response codes to
+    # instead all use an object like this
+    #
     class Response < Struct.new(:wants, :satisfied, :open)
       include Decisioney
       def self.[] int
@@ -172,9 +249,15 @@ module Hipe
       protected :initialize
     end
 
-
+    # we weren't sure what we would need this for when we started
+    # passing it around to every parser during the course of a parse,
+    # but in case we do need it it is here
+    #
+    # The one thing it is useful for is showing the 'parse tic'
+    # during debugging
+    #
     class ParseContext
-      include Misc
+      include CommonInstanceMethods
       @all = RegistryList.new
       class << self
         attr_reader :all
@@ -204,161 +287,6 @@ module Hipe
       end
       def pushback?
         @pushbacks.size > 0
-      end
-    end
-
-    module FaileyMcFailerson
-      def fail= parse_fail
-        no("type assert fail") unless parse_fail.kind_of? ParseFail
-        @last_fail = parse_fail
-      end
-      def fail
-        @last_fail
-      end
-      def failed?
-        ! @last_fail.nil?
-      end
-    end
-
-    module StrictOkAndDone
-      def done?
-        no("asking done when done is nil") if @done.nil?
-        @done
-      end
-      def open?
-        ! done?
-      end
-      def ok?
-        no("asking ok when ok is nil") if @ok.nil?
-        @ok
-      end
-    end
-
-    module Hookey
-      include Misc # no()
-
-      class DefinedHooks
-        attr_reader :onces
-        def initialize
-          @onces = Set.new
-          class << @onces
-            alias_method :has?, :include?
-          end
-        end
-      end
-      class Hooks
-        attr_reader :onces
-        def initialize
-          @onces = Hash.new{|h,k| h[k] = []}
-        end
-      end
-
-      def self.extended klass
-        klass.send(:define_method, :hooks) do
-          @hooks ||= Hooks.new
-        end
-      end
-
-      def has_hook_once hook_name
-        add_name = "hook_once_#{hook_name}".to_sym
-        has_name = "has_any_hook_once_#{hook_name}".to_sym
-        run_name = "run_hook_onces_#{hook_name}".to_sym
-        @defined_hooks ||= DefinedHooks.new
-        no("won't redefine a hook") if @defined_hooks.onces.has?(hook_name)
-        @defined_hooks.onces.add(hook_name)
-        module_eval do
-          define_method(has_name) do
-            hooks.onces[hook_name].any?
-          end
-
-          define_method(add_name) do |&block|
-            no("no") unless block # will kill our each logic below
-            hooks.onces[hook_name] << block
-          end
-
-          define_method(run_name) do |&block|
-            return -1 unless hooks.onces.has_key?(hook_name)
-            num_ran = 0
-            while (hook = hooks.onces[hook_name].shift)
-              block.call hook
-              num_ran += 1
-            end
-            num_ran
-          end
-        end
-      end
-    end
-
-
-    # a bunch of strictness
-    module Childable
-      def parent_id
-        no("no parent_id. check parent? first") unless @parent_id
-        @parent_id
-      end
-      def parent
-        no("no parent_id. check parent? first") unless @parent_id
-        Parses[@parent_id]
-      end
-      def unset_parent!
-        no('no parent to clear. check parent? first') unless @parent_id
-        @parent_id = nil
-      end
-      def parent?
-        ! @parent_id.nil?
-      end
-      def parent_id= pid
-        no("no") unless pid
-        no("parent already set.  unset parent first.") if @parent_id
-        @parent_id = pid
-        parent = Parses[pid]
-        if parent.depth.nil?
-          no("to be a parent, you need depth")
-        end
-        @depth = parent.depth + 1
-      end
-      def depth
-        @depth
-      end
-      def depth= x
-        @depth = x
-      end
-      def indent; '  '*depth end
-      def index_in_parent
-        parent.index_of_child self
-      end
-    end
-
-    #
-    # we were avoiding this for some reason but ...
-    #
-    module Parsey
-      include Misc # 'no'
-      def parse_context
-        ParseContext.all[@context_id]
-      end
-      def tic
-        parse_context.tic
-      end
-    end
-
-    module BubbleUppable
-      def bubble_up obj
-        if ! obj.kind_of? PushBack
-          No.no('no for now')
-        end
-        if ! parent?
-          No.no('for now all parses have parent except root parse')
-        end
-        if parent == RootParse
-          parse_context.pushback obj
-        else
-          if parent.respond_to? :bubble_up
-            parent.bubble_up obj
-          else
-            No.no("how come parent no have bubble_up?")
-          end
-        end
       end
     end
 

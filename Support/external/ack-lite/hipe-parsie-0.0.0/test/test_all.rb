@@ -12,3 +12,4 @@ require "#{root}/concat-basic.rb"
 require "#{root}/structured-basic.rb"
 require "#{root}/left-recursion-basic.rb"
 require "#{root}/left-recursion-page-45.rb"
+# require root + '/it-was-all-a-bad-idea.rb'

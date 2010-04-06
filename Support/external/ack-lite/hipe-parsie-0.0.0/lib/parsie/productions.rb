@@ -52,7 +52,7 @@ module Hipe
       def initialize klass
         @class = klass
         self.class.all[klass] = self
-        super(){|h,k| h[k] = AryExt[Array.new(0)] }
+        super(){|h,k| h[k] = ArrayExtra[Array.new(0)] }
       end
     end
     module Heapy
@@ -74,7 +74,7 @@ module Hipe
     end
 
     module Productive
-      include Misc
+      include CommonInstanceMethods
       def symbol_name= name;
         Productive.make_getter(self,:symbol_name,name)
       end
@@ -195,10 +195,8 @@ module Hipe
       def _building_this_parser= foo
         @building_this_parser = foo
       end
-      def nonterminal_common_build_parse parse_class, ctxt, parent, opts = {}
-        if parent.depth.nil?
-          no("why not?")
-        end
+      def nonterminal_common_build_parse parse_class, ctxt, parent, opts = {}, &block
+        no('no be a parent you have to have depth') if parent.depth.nil?
         if @building_this_parser
           if opts[:recursive_hook]
             rslt = opts[:recursive_hook].call(
@@ -209,16 +207,10 @@ module Hipe
             rslt.parent_id = parent.parse_id
           end
         else
-          if parent.depth.nil?
-            no('no')
-          end
-          parser = parse_class.new self, ctxt, parent #note2
-          if parser.depth.nil?
-            debugger
-            no('no')
-          end
-          @building_this_parser = parser
-          parser.build_children! opts
+          parser = parse_class.new(self, ctxt, parent, &block) #:note2
+          no('you need depth') if parser.depth.nil?
+          @building_this_parser = parser  # note building children in a second step
+          parser.build_children! opts     # allows us to make recurive references
           @building_this_parser = nil
           rslt = parser
         end
@@ -233,7 +225,7 @@ module Hipe
       def initialize sym
         @zero_width = nil
         nonterminal_common_init_locks
-        @children = AryExt[[sym]]
+        @children = ArrayExtra[[sym]]
       end
       def add child
         @zero_width = nil
@@ -246,13 +238,13 @@ module Hipe
       end
 
       #
-      # opts: :child_hook, :recursive_hook
+      # opts: :chil d_hook, :recursive_hook
       #
-      def build_parse ctxt, parent, opts={}
-        nonterminal_common_build_parse UnionParse, ctxt, parent, opts
+      def build_parse ctxt, parent, opts={}, &block
+        nonterminal_common_build_parse(UnionParse, ctxt, parent, opts, &block)
       end
 
-      # this probably isn't correct
+      # this probably isn't correct @todo
       def zero_width?
         return @zero_width unless @zero_width.nil?
         throw :wip_zero_width?,{:prod_id=>production_id} if @zero_width_lock
@@ -277,7 +269,7 @@ module Hipe
         @zero_width_lock = false
         @zero_width = zero_width
       end
-      # doesn't need reference_check as long as note1
+      # doesn't need reference_check as long as :note1
     end
 
     class ConcatProduction
@@ -300,7 +292,7 @@ module Hipe
           # need to register with the table and get production ids, etc
           prod
         end
-        AryExt[@children]
+        ArrayExtra[@children]
         @final_offset = @zero_width_map = @satisfied_offset =
           @zero_width = nil
       end
@@ -312,8 +304,8 @@ module Hipe
         determine_offsets! if @zero_width.nil?
         @zero_width
       end
-      def build_parse ctxt, parent, opts={}
-        nonterminal_common_build_parse ConcatParse, ctxt, parent, opts
+      def build_parse ctxt, parent, opts={}, &block
+        nonterminal_common_build_parse(ConcatParse, ctxt, parent, opts, &block)
       end
       def determine_offsets!
         @zero_width_map = @children.map(&:zero_width?)
@@ -406,4 +398,3 @@ module Hipe
     end
   end
 end
-

@@ -1,5 +1,8 @@
 require File.dirname(__FILE__)+'/support/common-setup.rb'
 
+# this file gets its name from the page in my copy of the
+# purple dragon on which this grammar appears
+
 module Hipe::Parsie
   describe "left recursion page 45" do
     extend SpecExtension

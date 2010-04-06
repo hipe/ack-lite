@@ -1,8 +1,7 @@
 module Hipe
   module Parsie
     class RangeParse
-      include Childable, FaileyMcFailerson,
-        Inspecty, NonterminalParsey
+      include NonterminalParsey
       attr_reader :parse_id
       def initialize prod, ctxt, parent, opts, my_opts
         @parse_id = Parses.register self
@@ -80,10 +79,10 @@ module Hipe
         @range.end != -1 && num_satisfied == @range.end
       end
       def look foo
-        Debug.puts "#{indent}#{short}.look #{foo.inspect}" if Debug.true?
+        Debug.puts "#{indent}#{short}.look #{foo.inspect}" if Debug.verbose?
         @last_look = foo
         d = decision(foo)
-        if Debug.true?
+        if Debug.verbose?
           Debug.puts("#{indent}#{short}.look #{foo.inspect} was: " <<
           d.inspct_for_debugging)
         end
@@ -176,7 +175,7 @@ module Hipe
       end
 
       def take! foo
-        puts "#{indent}#{short}.take! #{foo.inspect}" if Debug.true?
+        puts "#{indent}#{short}.take! #{foo.inspect}" if Debug.verbose?
         d = decision(foo)
         unless d.wants?
           no("can't take what i don't want")
@@ -216,6 +215,13 @@ module Hipe
             p._unparse arr
           end
         end
+      end
+
+      def each_existing_child &block
+        parses_satisfied.each_with_index do |child, idx|
+          block.call(child, idx)
+        end
+        nil
       end
 
       def inspct(ic=InspectContext.new, opts={})

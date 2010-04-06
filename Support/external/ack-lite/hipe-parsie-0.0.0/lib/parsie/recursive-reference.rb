@@ -45,7 +45,8 @@
 # The root union node should be none the wiser because it lost one
 # satisfied child and gained another.
 #
-# In this manner the tree is built downward and to the left.
+# For better or worse, in this manner the tree is built
+# downward and to the left.
 #
 
 module Hipe
@@ -60,8 +61,11 @@ module Hipe
     CONCAT_INCREMENT = 1  # just to keep track of where we are using
     HARD_CODED_THIEVERY = 0 # ditto above
 
+    # at one point this was called abstract
+    # but we create an object of it below
+    #
     class Reference
-      include Misc, Childable
+      include CommonInstanceMethods, Childable
       attr_reader :my_parse_id, :target_parse_id
       def initialize target_parse
         @target_parse_id = target_parse.parse_id
@@ -70,16 +74,29 @@ module Hipe
         # we use the above mainly because the look wip callback mechanism
         # doesn't happen in union.take just union.look
       end
+      def is_reference?
+        true
+      end
       def target
         Parses[@target_parse_id]
       end
+
+      # common things we may be defining redundanty b/c we don't want
+      # to confuse ourselves with too many modules
+      #
       def inspct ctxt, opts
         sprintf("#<Reference%s->%s>", @my_parse_id, @target_parse_id)
       end
       def inspct_tiny
         inspct nil, nil
       end
-      alias_method :short, :inspct_tiny
+      def short
+        "#<#{target.short}>"
+      end
+      def nil_parse?
+        false
+      end
+      # end common things
 
       #
       # When a parse reference is no longer needed (when it is 'collapsed')
@@ -158,8 +175,34 @@ module Hipe
         end
       end
 
+
+      # common things we may be re-defining redundantly b/c we don't want
+      # to mess with too many mixins here
+      #
+      def validate
+        if (depth != parent.depth+1)
+          no("#{short} has bad depth")
+        end
+        ui.puts "#{indent}ok (depth: #{depth})#{short}"
+      end
+
+      def ui # because we don't want to mess with parent-child
+        @ui ||= target.ui
+      end
+
+      def ui_clear!
+        @ui = nil
+      end
+
       def inspct ctxt, opts
         sprintf("#<RecursiveReference%s->%s", @my_parse_id, @target_parse_id)
+      end
+      #
+      # end common things
+
+
+      def ins
+        ui.puts "#{Inspecty::Indent*depth}#{short}"
       end
 
       # the parent should already said it (?) no reason to repeat
@@ -226,7 +269,7 @@ module Hipe
       def ridiculous_new_left_recursive_cparse cparse, new_ref
         cparse._start_offset = 0 + CONCAT_INCREMENT
           # todo we might wanna pass opts below
-        cparse.build_next_children_and_evaluate!
+        cparse.build_current_children_and_evaluate!
         cparse.hook_once_when_becomes_ok do |cparse, decision, token|
           step3_when_ok new_ref, HARD_CODED_THIEVERY, cparse, decision, token
         end
