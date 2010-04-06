@@ -110,6 +110,28 @@ module Hipe
         no("child not found") unless found
         found
       end
+    private
+      def cache_look_decision(token, decision)
+        @cached_look_decision = {
+          :token => token,
+          :decision => decision,
+          :tic => parse_context.tic
+        }
+      end
+      def pop_cached_look_decision(token)
+        this = @cached_look_decision
+        @cached_look_decision = nil
+        decision = this.delete(:decision)
+        compare = {
+          :token => token,
+          :tic   => parse_context.tic
+        }
+        diff = StructDiff.diff(this, compare)
+        unless diff.empty?
+          no("look did not match take: "<<diff.inspect)
+        end
+        decision
+      end
     end # end NonterminalParsey
   end
 end

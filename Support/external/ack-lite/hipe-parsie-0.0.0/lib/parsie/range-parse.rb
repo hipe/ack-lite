@@ -156,6 +156,7 @@ module Hipe
         end
         d.satisfied = num >= @range.begin
         d.assert_complete
+        cache_look_decision(foo, d)
         d
       end
 
@@ -180,7 +181,7 @@ module Hipe
 
       def take! foo
         puts "#{indent}#{short}.take! #{foo.inspect}" if Debug.verbose?
-        d = decision(foo)
+        d = pop_cached_look_decision(foo)
         unless d.wants?
           no("can't take what i don't want")
         end

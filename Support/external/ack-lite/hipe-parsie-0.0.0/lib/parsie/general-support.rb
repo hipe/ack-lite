@@ -258,8 +258,63 @@ module Hipe
       def describe
         message
       end
-
     end
 
+    # recursive diff on data structures.  notes of the diff
+    # are two element arrays, with the before and after values.
+    # identical structures return the empty array.
+    #
+    module StructDiff
+    module_function
+      def diff a, b
+        if a.respond_to?(:diff)
+          a.diff(b)
+        else
+          case a
+            when Array; array_diff(a,b)
+            when Hash;  hash_diff(a,b)
+            else        obj_diff(a,b)
+          end
+        end
+      end
+      def array_diff(a,b)
+        if ! b.kind_of?(Array)
+          return [{:class=>a.class}, {:class=>b.class}]
+        end
+        if a.length != b.length
+          return [{:length=>a.length}, {:length=>b.length}]
+        end
+        l = []; r = [];
+        a.each_with_index do |x,i|
+          d = diff(x, b[i])
+          unless d.empty?
+            l.push(:idx=>i, :diff=> diff[0])
+            r.push(:idx=>i, :diff=> diff[1])
+          end
+        end
+        l.empty? ? [] : [l, r]
+      end
+      def hash_diff(a, b)
+        unless b.kind_of?(Hash)
+          return [{:class=>a.class}, {:class=>b.class}]
+        end
+        ak = a.keys - b.keys
+        bk = b.keys - a.keys
+        if (bk.any? || ak.any?)
+          return [{:different_keys=>ak}, {:different_keys=>bk}]
+        end
+        l = []; r = [];
+        a.each do |(k,v)|
+          unless (d=obj_diff(v, b[k])).empty?
+            l.push(:key=>k, :diff=>d[0])
+            r.push(:key=>k, :diff=>d[1])
+          end
+        end
+        l.empty? ? [] : [l,r]
+      end
+      def obj_diff(a,b)
+        a == b ? [] : [a,b]
+      end
+    end
   end
 end

@@ -145,6 +145,17 @@ module Hipe
       class << self
         attr_reader :meta
 
+        def diff(a,b)
+          response = {}
+          Decisioney.meta[:main_three].each do |item|
+            left_val, right_val = a.send(item), b.send(item)
+            if left_val != right_val
+              response[item] = [left_val, right_val]
+            end
+          end
+          response
+        end
+
         def aliaz_method klass, nu, old
           if klass.method_defined?(old) && ! klass.method_defined?(nu)
             klass.send(:alias_method, nu, old)
@@ -215,14 +226,7 @@ module Hipe
       end
 
       def diff other
-        response = {}
-        Decisioney.meta[:main_three].each do |item|
-          left_val, right_val = send(item), other.send(item)
-          if left_val != right_val
-            response[item] = [left_val, right_val]
-          end
-        end
-        response
+        Decisioney.diff(self,other)
       end
 
       def inspct_for_debugging

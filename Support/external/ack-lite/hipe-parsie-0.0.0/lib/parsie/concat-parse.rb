@@ -120,7 +120,7 @@ module Hipe
       def take! foo
         Debug.puts "#{indent}#{short}.take! #{foo.inspect}" if Debug.verbose?
         @last_take = foo
-        d = look_decision foo
+        d = pop_cached_look_decision foo
         if ! d.wants?
           debugger; 'wtf'
           no("cannot take what i do not want")
@@ -223,6 +223,7 @@ module Hipe
           end
         end
         d.assert_complete
+        cache_look_decision(token, d)
         d
       end
 

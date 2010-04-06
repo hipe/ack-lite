@@ -183,6 +183,7 @@ module Hipe
                 decision.inspct_tiny)
         end
         decision.assert_complete
+        cache_look_decision(token, decision)
         decision
       end
 
@@ -192,7 +193,7 @@ module Hipe
       end
 
       def take! token
-        look = look_decision token
+        look = pop_cached_look_decision token
         no("won't take when don't want") unless look.wants?
         take = Decision.new
         take_lockout do
