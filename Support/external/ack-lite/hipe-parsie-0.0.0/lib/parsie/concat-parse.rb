@@ -351,11 +351,19 @@ module Hipe
           if sat.is_nil_parse?
             # stay not ok
           elsif sat.is_reference?
-            puts "\n\n"
-            RootParse.ins
-            puts "\n\n"
-            self.validate_around
-            debugger; 'help?'
+            if sat.target.ok_known?
+              if sat.target.ok?
+                RootParse.ins
+                # self.validate_around
+                debugger; 'help?'
+              else
+                # recursive reference target is known not to be ok
+                # stay not ok i guess
+              end
+            else
+              # it is unknown whether it is ok or not.
+              # stay not ok i guess
+            end
           elsif sat.ok?
             @ok = true
           end

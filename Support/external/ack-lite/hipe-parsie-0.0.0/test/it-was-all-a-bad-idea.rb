@@ -36,7 +36,7 @@ module Hipe::Parsie
     end
 
     skipit "(11-5) i am filled with anger" do
-      Debug.verbose = true
+      # Debug.verbose = true
       parse = evil_grammar.build_start_parse
       foo = <<-HERE.cleanup(6)
       foobric
@@ -53,7 +53,13 @@ module Hipe::Parsie
 
       HERE
       rslt = evil_grammar.parse!(foo)
-      puts rslt.fail.message
+      if rslt.ok?
+        pp rslt.tree # .sexp
+        debugger; 'x'
+      else
+        assert(false)
+        puts rslt.fail.message
+      end
     end
 
     def evil_grammar
@@ -69,34 +75,33 @@ module Hipe::Parsie
         )
         g.add :not_option_line, /\A(?!OPTION)(.*)\Z/ #
         g.add :options_header, /\A(OPTIONS)\Z/
-        g.add :options_list, [:options_list, :option_entry]
-        g.add :options_list, :option_entry
-
+        g.add :options_list, [(1..-1), :option_entry]
         g.add :option_entry,
-          [:main_thing_list, :content_lines, :blank_line]
-        g.add :blank_line, ''
-        g.add :main_thing_list, [:main_thing_list, :more_main_things]
-        g.add :main_thing_list, :main_thing
-        g.add :more_main_things, [(0..-1), [:thing_separator, :main_thing]]
+          [:option_switch_syntax_list, :content_lines, :blank_lines]
+        g.add :blank_lines, [(1..-1), :blank_line], :capture=>false
+        g.add :blank_line, /^( *)$/
+        g.add :option_switch_syntax_list, [:option_switch_syntax, :more_option_switch_syntaxs]
+        g.add :more_option_switch_syntaxs, [(0..-1), [:thing_separator, :option_switch_syntax]]
         g.add :thing_separator, / *, */
         g.add :thing_separator, / *\bor\b */
-        g.add :main_thing, /\s*\b
-            (-[?a-z]|--?[a-z0-9][-_a-z0-9]+)       # the name part
+        g.add( :option_switch_syntax, /\s*
+            (-[?a-z]|--?[a-z0-9][-_a-z0-9]+)       # the name part #1
             (?:
-              (\[=[_a-z]+\])                       # an optional value
+              (\[=[_a-z]+\])                       # an optional value #2
               |
               (?:
-                (?:(?:\s\s?|=)([_a-z])+)           # a val w. an equals or a space
+                (?:(?:\s\s?|=)([_a-z]+))           # a val w. an equals or a space #3
               )
               |
               (?: \s
-                ([_a-z]+=[_a-z]+)                  # that crazy ffmpeg key-value thing
+                ([_a-z]+=[_a-z]+)                  # that crazy ffmpeg key-value thing #4
               )
             )?
             \b\s*                                  # eat remaining w-s
-        /xi                                        # case insensitive, allow whitespace in re
-        g.add :content_lines, [:content_lines, :content_line]
-        g.add :content_lines, :content_line
+        /xi,                                       # case insensitive, allow whitespace in re
+          :named_captures =>[:name, :opt_val, :req_val, :ridiculous_key_val]
+        )
+        g.add :content_lines, [(1..-1), :content_line]
         g.add :content_line, /\A[[:space:]]{14}([^[:space:]].*)\Z/
 
         g.reference_check

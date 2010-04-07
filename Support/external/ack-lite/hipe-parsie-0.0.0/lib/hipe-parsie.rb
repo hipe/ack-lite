@@ -8,6 +8,7 @@ require root + '/parse-support.rb'
 require root + '/terminal-parsers.rb'
 require root + '/nonterminal-parsers.rb'
 require root + '/recursive-reference.rb'
+require root + '/sexpesque.rb'
 
 # note1: - UnionSymbols are only ever created by the table, pipe operator not
 #         supported
