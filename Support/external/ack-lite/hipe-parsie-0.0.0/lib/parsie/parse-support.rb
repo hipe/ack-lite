@@ -356,6 +356,34 @@ module Hipe
           return l * "\n   #{ind}"
         end
       end
+      def sexp
+        case type
+        when :regexp, :string
+          s[symbol_name, *value]
+        when :concat, :range
+          val = value
+          case val
+          when Symbol
+            arr = val
+          else
+            arr = val.each_with_index.map do |vv,idx|
+              case vv
+              when ParseTree; vv.sexp
+              when NilParse: nil
+              else
+                debugger; 'x'
+              end
+            end
+          end
+          s[symbol_name, *arr]
+        else
+          fail("type: #{type}")
+        end
+      end
+    private
+      def s
+        Sexpesque
+      end
     end # ParseTree
   end # Parsie
 end # Hipe

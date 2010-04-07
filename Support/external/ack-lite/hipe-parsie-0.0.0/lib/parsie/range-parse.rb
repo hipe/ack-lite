@@ -2,7 +2,7 @@ module Hipe
   module Parsie
     class RangeParse
       include NonterminalParsey
-      attr_reader :parse_id
+      attr_reader :parse_id, :my_production_id
       def initialize prod, ctxt, parent, opts, my_opts
         @parse_id = Parses.register self
         self.parent_id = parent.parse_id
@@ -17,10 +17,10 @@ module Hipe
       end
       def parse_type; :range end
       def parse_type_short; 'r' end
-      def my_production; Productions[@my_production_id] end
+      def my_production; Productions[my_production_id] end
       def symbol_name;
         my_production.respond_to?(:symbol_name) ?
-          my_production.symbol_name : false
+          my_production.symbol_name : :anonymous_range
       end
       # not sure if this should be @num_satisfied or @parses_satisfied
       def num_children
@@ -294,10 +294,14 @@ module Hipe
       end
 
       def tree
-        if false == @opts[:capture]
-          :no_capture
-        else
-          parses_satisfied.map(&:tree)
+        @tree ||= begin
+          no("no asking for tree when not ok (#{short})") unless ok?
+          val = if (false==@opts[:capture])
+            :no_capture
+          else
+            parses_satisfied.map(&:tree)
+          end
+          ParseTree.new(:range, symbol_name, my_production_id, val)
         end
       end
     end

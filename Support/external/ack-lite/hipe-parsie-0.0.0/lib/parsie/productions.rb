@@ -88,15 +88,15 @@ module Hipe
         no("don't clobber this") if obj.respond_to? meth
         class<<obj; self end.send(:define_method,meth){val}
       end
-      def really_stupid_heapy_terminal_parse_build klass, ctxt, parent
+      def really_stupid_heapy_terminal_parse_build klass, ctxt, parent, opts
         if parent.depth.nil?
           no("where is depth?")
         end
         if self.class.heap[:default].any?
           use_this_one = self.class.heap[:default].pop
-          use_this_onse.send(:initialize, self, ctxt, parent)
+          use_this_onse.send(:initialize, self, ctxt, parent, opts)
         else
-          use_this_one = klass.new self, ctxt, parent
+          use_this_one = klass.new self, ctxt, parent, opts
         end
         use_this_one
       end
@@ -119,7 +119,7 @@ module Hipe
         if parent.depth.nil?
           no("where is depth?")
         end
-        really_stupid_heapy_terminal_parse_build StringParse, ctxt, parent
+        really_stupid_heapy_terminal_parse_build StringParse, ctxt, parent, nil
       end
       def to_bnf_rhs; @string_literal.inspect end
       def zero_width?
@@ -134,9 +134,12 @@ module Hipe
       include Productive
       extend Heapy
       attr_accessor :re
-      def initialize re; @re = re end
+      def initialize re, prod_opts
+        @re_opts = prod_opts
+        @re = re
+      end
       def build_parse ctxt, parent, opts=nil
-        really_stupid_heapy_terminal_parse_build RegexpParse, ctxt, parent
+        really_stupid_heapy_terminal_parse_build RegexpParse, ctxt, parent, @re_opts
       end
       # @todo not bnf!
       def to_bnf_rhs;

@@ -40,7 +40,7 @@ module Hipe
 
     class StringParse
       include TerminalParsey
-      def initialize prod, ctxt, parent
+      def initialize prod, ctxt, parent, _
         self.parent_id = parent.parse_id
         @string = prod.string_literal
         @production_id = prod.production_id
@@ -104,12 +104,13 @@ module Hipe
     class RegexpParse
       include TerminalParsey
       attr_accessor :md
-      def initialize production, ctxt, parent
+      def initialize production, ctxt, parent, re_opts
         self.parent_id = parent.parse_id
         @production_id = production.production_id
         @symbol_name = production.symbol_name
         @md = false
         @re = production.re
+        @re_opts = re_opts
         @done = false
         @ok = false    # @todo some regexs will be zero width
       end
@@ -154,12 +155,19 @@ module Hipe
         nil
       end
       def tree
-        return @tree unless @tree.nil?
+        return @tree unless @tree.nil? # yes
         @tree = begin
-          if ! @md then false
+          if @md.nil?
+            false
           else
-            val = @md.captures.length > 0 ?
-              @md.captures : @md[0]
+            val =
+            if @md.captures.empty?
+              @md[0]
+            elsif @re_opts[:named_captures]
+              Hash[@re_opts[:named_captures].zip(@md.captures)]
+            else
+              @md.captures
+            end
             ParseTree.new(:regexp, @symbol_name, @production_id, val)
           end
         end

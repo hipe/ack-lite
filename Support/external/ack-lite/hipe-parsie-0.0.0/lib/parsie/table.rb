@@ -92,12 +92,12 @@ module Hipe
 
       # adds a production rule, merging it into
       # or creating a union if necessary
-      def add symbol_name, mixed, opts={}, &block
+      def add symbol_name, mixed, prod_opts={}, &block
         @current_add_line += 1
         @start_symbol_name = symbol_name if symbols.size == 0
         prod = nil
         begin
-          prod = build_production mixed, nil, opts, &block
+          prod = build_production mixed, nil, prod_opts, &block
         rescue ParseParseFail=>e
           return parse_parse_fail e, symbol_name, mixed
         end
@@ -181,7 +181,7 @@ module Hipe
         end
       end
 
-      def build_production mixed, allowed=nil, opts={}, &block
+      def build_production mixed, allowed=nil, prod_opts={}, &block
         if allowed
           unless allowed.detect{|x| mixed.kind_of? x }
             raise ParseParseFail.new("can't use #{mixed.class.inspect}"<<
@@ -191,9 +191,9 @@ module Hipe
 
         prod =
         case mixed
-          when Regexp; RegexpProduction.new(mixed)
+          when Regexp; RegexpProduction.new(mixed,prod_opts)
           when Symbol; SymbolReference.new(mixed)
-          when Array;  ConcatProduction.factory(self, mixed, opts, &block)
+          when Array;  ConcatProduction.factory(self, mixed, prod_opts, &block)
           when String; StringProduction.new(mixed)
           else raise ParseParseFail.new("no: #{mixed.inspect}")
         end

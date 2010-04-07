@@ -35,7 +35,7 @@ module Hipe::Parsie
       assert_match(tgt, str)
     end
 
-    skipit "(11-5) i am filled with anger" do
+    it "(11-5) i am filled with anger" do
       # Debug.verbose = true
       parse = evil_grammar.build_start_parse
       foo = <<-HERE.cleanup(6)
@@ -54,8 +54,14 @@ module Hipe::Parsie
       HERE
       rslt = evil_grammar.parse!(foo)
       if rslt.ok?
-        pp rslt.tree # .sexp
-        debugger; 'x'
+        sexp = rslt.tree.sexp
+        entries = sexp[:options_list].all(:option_entry)
+        assert_equal(2, entries.size)
+        these = entries[0][:switches].unjoin
+        names = these.map(&:to_hash)
+        assert_equal({:short_name=>'-A', :required=>'NUM'}, names[0])
+        assert_equal({:long_name=>"--after-context", :required=>"NUM"},
+           names[1])
       else
         assert(false)
         puts rslt.fail.message
@@ -77,33 +83,39 @@ module Hipe::Parsie
         g.add :options_header, /\A(OPTIONS)\Z/
         g.add :options_list, [(1..-1), :option_entry]
         g.add :option_entry,
-          [:option_switch_syntax_list, :content_lines, :blank_lines]
+          [:switches, :descriptions, :blank_lines]
         g.add :blank_lines, [(1..-1), :blank_line], :capture=>false
         g.add :blank_line, /^( *)$/
-        g.add :option_switch_syntax_list, [:option_switch_syntax, :more_option_switch_syntaxs]
-        g.add :more_option_switch_syntaxs, [(0..-1), [:thing_separator, :option_switch_syntax]]
-        g.add :thing_separator, / *, */
-        g.add :thing_separator, / *\bor\b */
-        g.add( :option_switch_syntax, /\s*
-            (-[?a-z]|--?[a-z0-9][-_a-z0-9]+)       # the name part #1
+        g.add :switches, [:switch, :more_switches]
+        g.add :more_switches, [(0..-1), [:switch_separator, :switch]]
+        g.add :switch_separator, / *, */
+        g.add :switch_separator, / *\bor\b */
+        g.add( :switch, /\s*
             (?:
-              (\[=[_a-z]+\])                       # an optional value #2
+              (-[?a-z])                        # short name #1
+              |
+              (--?[a-z0-9][-_a-z0-9]+)         # long name #2
+            )
+            (?:
+              (\[=[_a-z]+\])                   # an optional value #3
               |
               (?:
-                (?:(?:\s\s?|=)([_a-z]+))           # a val w. an equals or a space #3
-              )
+                (?:(?:\s\s?|=)([_a-z]+))       # a val w. an equals
+              )                                # or a space #4
               |
               (?: \s
-                ([_a-z]+=[_a-z]+)                  # that crazy ffmpeg key-value thing #4
+                ([_a-z]+=[_a-z]+)              # that crazy ffmpeg
+                                               # key-value thing #5
               )
             )?
-            \b\s*                                  # eat remaining w-s
-        /xi,                                       # case insensitive, allow whitespace in re
-          :named_captures =>[:name, :opt_val, :req_val, :ridiculous_key_val]
+            \b\s*                              # eat remaining w-s
+        /xi,                                   # case insensitive, allow
+                                               # whitespace in re
+        :named_captures =>
+          [:short_name, :long_name, :optional, :required, :ridiculous_key_val]
         )
-        g.add :content_lines, [(1..-1), :content_line]
-        g.add :content_line, /\A[[:space:]]{14}([^[:space:]].*)\Z/
-
+        g.add :descriptions, [(1..-1), :description]
+        g.add :description, /\A[[:space:]]{14}([^[:space:]].*)\Z/
         g.reference_check
       }
     end
