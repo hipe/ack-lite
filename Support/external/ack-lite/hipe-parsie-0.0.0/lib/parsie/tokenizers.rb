@@ -11,7 +11,7 @@ module Hipe
           if is_emtpy_stream_or_file?
             "and had no input"
           else
-            "at end of input near "+@lines[@last_offset].inspect
+            "at end of input near "+get_line_at_final_offset.inspect
           end
         else
           this = get_line_at(use_offset)
@@ -26,19 +26,19 @@ module Hipe
       # tokenizer
       # note that in lemon the lexer calls the parser
 
-      attr_accessor :has_more_tokens, :last_offset, :offset
+      attr_accessor :has_more_tokens, :final_offset, :offset
       def initialize str
         @lines = str.split("\n")
         @offset = -1;
-        @last_offset = @lines.length - 1
+        @final_offset = @lines.length - 1
       end
       def peek
         hypothetical = @offset + 1
-        return nil if hypothetical > @last_offset
+        return nil if hypothetical > @final_offset
         @lines[hypothetical]
       end
       def pop!
-        return nil if @offset > @last_offset
+        return nil if @offset > @final_offset
         @offset += 1 # let it get one past last offset
         @lines[@offset]
       end
@@ -50,16 +50,22 @@ module Hipe
         nil
       end
       def has_more_tokens?
-        @offset < last_offset # b/c pop is the only way to go
+        @offset < final_offset # b/c pop is the only way to go
       end
       def is_at_end_of_input?
-        (@offset + 1) > last_offset
+        (@offset + 1) > final_offset
       end
       def is_emtpy_stream_or_file?
         @lines.length == 0
       end
+      def final_offset
+        @final_offset
+      end
       def get_line_at idx
         @lines[idx]
+      end
+      def get_line_at_final_offset
+        get_line_at final_offset
       end
     end
     module StackTokenizerAdapter

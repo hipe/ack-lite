@@ -1,54 +1,5 @@
 module Hipe
   module ManParse
-    module Lingual
-      def oxford_comma items, sep=' and ', comma=', '
-        return '()' if items.size == 0
-        return items[0] if items.size == 1
-        seps = [sep, '']
-        seps.insert(0,*Array.new(items.size - seps.size, comma))
-        items.zip(seps).flatten.join('')
-      end
-    end
-    class Np
-      include Lingual
-      def self.[](*arr)
-        new(*arr)
-      end
-      def initialize *arr
-        @root = @list = @art = @size = nil
-        arr.each do |mixed|
-          case mixed
-          when String; @root = mixed
-          when Array;  @list = mixed
-          when Fixnum; @size = mixed
-          when Symbol; eat_symbol(mixed)
-          else fail("no: #{mixed.inspect}")
-          end
-        end
-      end
-      def to_str
-        s = @root
-        s << 's' if count != 1
-        if @list
-          s << ': ' << oxford_comma(list)
-        end
-      end
-      alias_method :to_s, :to_str
-    private
-      def count
-        @list ? @list.size : @count
-      end
-      def eat_symbol sym
-        case sym
-        when :quoted; @quoted = true
-        else
-          @art = sym
-        end
-      end
-      def list
-        (@list && @quoted) ? @list.map{|x| "\"#{x}\"" } : @list
-      end
-    end
     module OptparseLite
       include Lingual
       class << self

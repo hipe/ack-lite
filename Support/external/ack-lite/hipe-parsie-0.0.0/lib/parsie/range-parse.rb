@@ -92,10 +92,8 @@ module Hipe
         Debug.puts "#{indent}#{short}.look #{foo.inspect}" if Debug.verbose?
         @last_look = foo
         d = decision(foo)
-        if Debug.verbose?
-          Debug.puts("#{indent}#{short}.look #{foo.inspect} was: " <<
-          d.inspct_for_debugging)
-        end
+        Debug.puts("#{indent}#{short} "<<d.inspct_for_debugging) if
+          Debug.verbose?
         d.response
       end
       class Decision

@@ -1,6 +1,8 @@
 require 'ruby-debug'
 require 'pp'
-require 'man-parse/modulettes'
+me = File.dirname(__FILE__)+'/man-parse'
+require me + '/modulettes'
+require me + '/cli-litey'
 $:.unshift(File.expand_path('../../..',__FILE__)+'/hipe-parsie-0.0.0/lib')
 require 'hipe-parsie'
 
@@ -8,21 +10,23 @@ module Hipe
   module ManParse
     module Commands
       include CliLitey
-      include Open2Str
-      private(*Open2Str.public_instance_methods)
-      extend self
+      extend self # module_function won't work
+      # includes Controller below
+
       description "parse man pages"
       # add more description lines if you want to make a manpage yourself!
 
       o "COMMAND"
       x "does the command exist?"
-      def exists? opts, command=nil
+      x "give it the name of a command (like 'sed' or 'grep')"
+      def command? opts, command=nil
         return help if opts[:h] || command.nil?
-        ui.print(it_exists?(command) ? 'yes' : 'no')
+        ui.print(command_found?(command) ? 'yes' : 'no')
       end
 
       o 'COMMAND'
       x "can the manpage be found?"
+      x "give it the name of a command (like 'sed' or 'grep')"
       def man? opts, command=nil
         return help if opts[:h] || command.nil?
         ui.print(man_exists?(command) ? 'yes' : 'no')
@@ -32,6 +36,8 @@ module Hipe
       x "will you please try and parse it?"
       x "if COMMAND is provided, tries to read manpage for that,"
       x "else tries to read manpage-like data from STDIN"
+      x "if STDIN is tty, will let you type man-page like data in and "
+      x "see if it can parse it. (feature?)"
       x 'Options:'
       x ParseOpts = lambda{|o|
         o.on('-v, --verbose', :verbose?,
@@ -41,8 +47,16 @@ module Hipe
       }
       def parse! opts, command=nil
         return help if opts[:h]
-        @interrupted = false
         return short_help unless opts.valid?(&ParseOpts)
+        instream, interactive = instream_interactive?(command)
+        if interactive && ! opts.verbose?
+          opts[:verbose?] = true
+        end
+        opts.set!(:interactive?, interactive)
+        process_parse opts, instream
+      end
+    private
+      def instream_interactive? command
         if command.nil?
           if $stdin.tty?
             instream = tty_to_instream
@@ -57,10 +71,35 @@ module Hipe
         else
           fail("Won't both read from STDIN and command name: \"#{comm}\"")
         end
+        [instream, interactive]
+      end
+      def tty_to_instream
+        ui.err.puts(
+          "trying to read manpage from STDIN! I guess you want to type it.")
+        ui.err.puts "Type Ctrl-D for EOF, Ctrl-C to quit"
+        catch_interrupts
+        $stdin
+      end
+      def command_to_instream command
+        string = command_to_man_string command
+        instream = StringIO.new(string)
+        instream.rewind
+        instream
+      end
+      def catch_interrupts
+        trap('INT') { throw(:interrupt, :interrupted) }
+      end
+    end # Commands
+    module Controller
+      include Open2Str
+      private(*Open2Str.public_instance_methods)
+      extend self
+
+      def process_parse opts, instream
         response = catch(:interrupt) do
           struct = manpage_stream_to_struct(instream, opts)
           if struct.ok?
-            PP.pp(struct, ui) #will have to change
+            process_struct(opts, struct)
           else
             ui.err.puts struct.fail.message
           end
@@ -76,20 +115,6 @@ module Hipe
         end
       end
 
-      def grammar
-        @grammar ||= Hash.new do |h,k|
-          case k
-          when :grammar1
-            h[k] = new_man_page_grammar1
-          else
-            fail("sorry we don't have a manpage grammar called #{k.inspect}")
-          end
-        end
-      end
-
-    private
-      def s; Sexpesque; end
-
       # ( zcat `man --path foo` ) vs. ( man foo | col -bx )
       def manpage_stream_to_struct instream, opts
         opts.set!(:notice_stream, ui.err) # will only be used if verbose?
@@ -99,32 +124,18 @@ module Hipe
         structure
       end
 
-      def tty_to_instream
-        ui.err.puts "trying to read manpage from STDIN! I guess you want to type it."
-        ui.err.puts "Type Ctrl-D for EOF, Ctrl-C to quit"
-        catch_interrupts
-        $stdin
-      end
-
-      def command_to_instream command
-        string = command_to_man_string command
-        instream = StringIO.new(string)
-        instream.rewind
-        instream
-      end
-
-      def catch_interrupts
-        trap('INT') { throw(:interrupt, :interrupted) }
-      end
-
       def command_to_man_string cmd
+        out, err = man_exists2(cmd)
+        if err.length > 0
+          raise Ui[ArgumentError.new(err)]
+        end
         cmd = "man #{cmd} | col -bx"
         out, err = open2_str(cmd)
         fail(err) unless ""==err
         out
       end
 
-      def it_exists? cmd
+      def command_found? cmd
         which = %{which #{cmd}}
         out, err = open2_str(which)
         if (''==err && ''==out)
@@ -136,8 +147,12 @@ module Hipe
         end
       end
 
+      def man_exists2 cmd
+        open2_str(%{man --path #{cmd}})
+      end
+
       def man_exists? cmd
-        out, err = open2_str(%{man --path #{cmd}})
+        out, err = man_exists_2
         if (''==err && 0 < out.length)
           true
         elsif (''==out && 0 < err.length && /\ANo manual/=~ err )
@@ -150,12 +165,13 @@ module Hipe
       # this assumes 'man --path' is available (note1:.)
       def assert_necessary_tools
         errs = []
-        errs.push("need `col` utility") unless it_exists?("col")
+        errs.push("need `col` utility") unless command_found?("col")
         fail(errs.join('. ')) if errs.any?
         nil
       end
 
-      if (false) # just here for reference, these are example options from manpages
+      if (false)
+      # just here for reference, these are example options from manpages
         s = <<-HERE
           -metadata key=value
           -loglevel loglevel
@@ -168,56 +184,77 @@ module Hipe
         HERE
       end
 
+      def grammar
+        @grammar ||= Hash.new do |h,k|
+          case k
+          when :grammar1
+            h[k] = new_man_page_grammar1
+          else
+            fail("sorry we don't have a manpage grammar called #{k.inspect}")
+          end
+        end
+      end
+
       def new_man_page_grammar1
-        # Grammar.all.has?(name) ? Grammar.all[name]
-          Hipe::Parsie::Grammar.new("generic man page") do |g|
-          g.add :man_page,  [
-                              :before_options_header,
+        Hipe::Parsie::Grammar.new("generic man page") do |g|
+          g.add :man_page,  [:before_options_header,
                               :options_header,
-                              :options_list
-                            ]
+                              :options_list]
           g.add( :before_options_header,
                   [(1..-1), :not_option_line],
                  :capture => false
           )
           g.add :not_option_line, /\A(?!OPTION)(.*)\Z/ #
           g.add :options_header, /\A(OPTIONS)\Z/
-          g.add :options_list, [:options_list, :option_entry]
-          g.add :options_list, :option_entry
-
+          g.add :options_list, [(1..-1), :option_entry]
           g.add :option_entry,
-            [:main_thing_list, :content_lines, :blank_line]
-          g.add :blank_line, ''
-          g.add :main_thing_list, [:main_thing_list, :more_main_things]
-          g.add :main_thing_list, :main_thing
-          g.add :more_main_things, [(0..-1), [:thing_separator, :main_thing]]
-          g.add :thing_separator, / *, */
-          g.add :thing_separator, / *\bor\b */
-          g.add :main_thing, /\s*\b
-              (-[?a-z]|--?[a-z0-9][-_a-z0-9]+)       # the name part
+            [:switches, :descriptions, :blank_lines]
+          g.add :blank_lines, [(1..-1), :blank_line], :capture=>false
+          g.add :blank_line, /^( *)$/
+          g.add :switches, [:switch, :more_switches]
+          g.add :more_switches, [(0..-1), [:switch_separator, :switch]]
+          g.add :switch_separator, / *, */
+          g.add :switch_separator, / *\bor\b */
+          g.add( :switch, /\s*
               (?:
-                (\[=[_a-z]+\])                       # an optional value
+                (-[?a-z])                        # short name #1
+                |
+                (--?[a-z0-9][-_a-z0-9]+)         # long name #2
+              )
+              (?:
+                (\[=[_a-z]+\])                   # an optional value #3
                 |
                 (?:
-                  (?:(?:\s\s?|=)([_a-z])+)           # a val w. an equals or a space
-                )
+                  (?:(?:\s\s?|=)([_a-z]+))       # a val w. an equals
+                )                                # or a space #4
                 |
                 (?: \s
-                  ([_a-z]+=[_a-z]+)                  # that crazy ffmpeg key-value thing
+                  ([_a-z]+=[_a-z]+)              # that crazy ffmpeg
+                                                 # key-value thing #5
                 )
               )?
-              \b\s*
-          /xi
-          g.add :content_lines, [:content_lines, :content_line]
-          g.add :content_lines, :content_line
-          g.add :content_line, /\A[[:space:]]{14}([^[:space:]].*)\Z/
-
+              \b\s*                              # eat remaining w-s
+          /xi,                                   # case insensitive, allow
+                                                 # whitespace in re
+          :named_captures =>
+            [:short_name, :long_name,
+              :optional, :required, :ridiculous_key_val]
+          )
+          g.add :descriptions, [(1..-1), :description]
+          g.add :description, /\A[[:space:]]{14}([^[:space:]].*)\Z/
           g.reference_check
         end
-      end
-    end # Commands
+      end # new_man_page_grammar_1
+    end # Controller
+
+    module Commands
+      include Controller
+      extend self # module_function won't work
+      private(*Controller.public_instance_methods)
+    end
   end # ManParse
 end # hipe
+
 # def man_troff_parse io, struct
 #   @io = io
 #   @struct = struct

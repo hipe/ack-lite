@@ -53,11 +53,12 @@ module Hipe
         ctxt = ParseContext.new
         tokenizer = build_tokenizer mixed
         parse = build_start_parse ctxt
+
         while ( ! parse.done? ) && ( token = tokenizer.peek )
           ctxt.tic!
           $token = token
           if Debug.verbose?
-            Debug.puts "\n\n\nTOKEN: #{token.inspect} (tic #{ctxt.tic})\n\n\n"
+            Debug.puts "\n\nTOKEN: #{token.inspect} (tic #{ctxt.tic})\n\n\n"
           end
           resp = parse.look token
           if 0 != WANTS & resp
@@ -65,7 +66,7 @@ module Hipe
             tokenizer.pop!  # do a conditional that runs a hook here
             if ctxt.pushback?
               str = ctxt.pushback_pop.string
-              Debug.puts "PUSING BACK: #{str}" if Debug.verbose?
+              Debug.puts "PUSING BACK: #{str.inspect}" if Debug.verbose?
               tokenizer.push str
             end
           else
