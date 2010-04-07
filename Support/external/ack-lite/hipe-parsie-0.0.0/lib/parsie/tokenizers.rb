@@ -1,3 +1,4 @@
+# @todo this should probably get StackeyStream from man-parse
 module Hipe
   module Parsie
     module TokenizerDescribe
@@ -11,11 +12,11 @@ module Hipe
           if is_emtpy_stream_or_file?
             "and had no input"
           else
-            "at end of input near "+get_line_at_final_offset.inspect
+            "at end of input near "+get_context_near_end
           end
         else
-          this = get_line_at(use_offset)
-          "near \"#{this}\""
+          this = get_context_near(use_offset)
+          "near #{this}"
         end
       end
     end
@@ -26,7 +27,7 @@ module Hipe
       # tokenizer
       # note that in lemon the lexer calls the parser
 
-      attr_accessor :has_more_tokens, :final_offset, :offset
+      attr_accessor :final_offset, :offset
       def initialize str
         @lines = str.split("\n")
         @offset = -1;
@@ -44,6 +45,8 @@ module Hipe
       end
       # this is experimental.  if we want to add end-of stack hooks
       # we should change this to replace_current
+      # @todo if this is correct, explain it b/c it does
+      # not look like push
       def push item
         @lines[@offset] = item
         @offset -= 1
@@ -64,8 +67,14 @@ module Hipe
       def get_line_at idx
         @lines[idx]
       end
+      def get_context_near x
+        get_line_at(x).inspect
+      end
       def get_line_at_final_offset
         get_line_at final_offset
+      end
+      def get_context_near_end
+        get_line_at_final_offset.inspect
       end
     end
     module StackTokenizerAdapter

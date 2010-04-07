@@ -1,3 +1,5 @@
+require 'diff/lcs'
+
 module Hipe
   module Parsie
     module SpecExtension
@@ -14,7 +16,21 @@ module Hipe
 
     module SpecInstanceMethods
       def with it
-       yield it
+        yield it
+      end
+      def assert_array(tgt,arr)
+        if tgt == arr
+          assert_equal(tgt, arr)
+        else
+          if arr.kind_of? Array
+            diff = Diff::LCS.diff(tgt, arr)
+            puts("\nFrom "<<caller[0].match(/`([^']+)'$/)[1])
+            puts diff.to_yaml
+            assert(false, "array equal failed. see diff")
+          else
+            assert(false, "was not array: #{arr.insp}")
+          end
+        end
       end
     end
 

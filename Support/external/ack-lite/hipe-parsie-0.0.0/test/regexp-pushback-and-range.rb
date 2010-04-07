@@ -20,23 +20,30 @@ module Hipe::Parsie
       )
     end
 
-    it "good (102)" do
-      parse = repeater_grammar.parse!("123")
+    def assert_range_parse(type, name, arr, parse)
       parse.fail.must_equal nil
       tree = parse.tree
-      tree.kind_of?(Array).must_equal true
-      tree.size.must_equal 1
-      tree[0].must(:regexp, :digit){|v| v.must_equal '123'}
+      assert_range_parse_tree(type, name, arr, tree)
     end
 
-    it "good good (102)" do
+    def assert_range_parse_tree(type, name, arr, tree)
+      assert_instance_of(ParseTree, tree)
+      assert_equal(:range, tree.type)
+      assert_kind_of(Array,tree.value)
+      assert_equal(arr.size,tree.value.size)
+      arr.each_with_index do |v, idx|
+        tree.value[idx].must(type, name){|v| v.must_equal v}
+      end
+    end
+
+    it "good (102-1)" do
+      parse = repeater_grammar.parse!("123")
+      assert_range_parse(:regexp, :digit, ['123'], parse)
+    end
+
+    it "good good (102-2)" do
       parse = repeater_grammar.parse!("123\n456")
-      parse.fail.must_equal nil
-      tree = parse.tree
-      tree.kind_of?(Array).must_equal true
-      tree.size.must_equal 2
-      tree[0].must(:regexp, :digit){|v| v.must_equal '123'}
-      tree[1].must(:regexp, :digit){|v| v.must_equal '456'}
+      assert_range_parse(:regexp, :digit, %w(123 456), parse)
     end
 
     it "good bad (103)" do
@@ -47,13 +54,7 @@ module Hipe::Parsie
 
     it "good good good (104)" do
       parse = repeater_grammar.parse!("123\n456\n789")
-      parse.fail.must_equal nil
-      tree = parse.tree
-      tree.kind_of?(Array).must_equal true
-      tree.size.must_equal 3
-      tree[0].must(:regexp, :digit){|v| v.must_equal '123'}
-      tree[1].must(:regexp, :digit){|v| v.must_equal '456'}
-      tree[2].must(:regexp, :digit){|v| v.must_equal '789'}
+      assert_range_parse(:regexp, :digit, %w(123 456 789), parse)
     end
 
     def repeater_grammar_no_cap
@@ -66,20 +67,25 @@ module Hipe::Parsie
         end
     end
 
+    # non-capturing symbols of repeating ranges still
+    # indicate how many times they matched
+    #
+    def assert_no_capture(num, parse)
+      parse.fail.must_equal nil
+      parse.tree.value.must_equal :no_capture
+      parse.num_satisfied.must_equal num
+    end
+
     it "no capture should parse three (201)" do
       repeater_grammar_no_cap.kind_of?(Grammar).must_equal true
       parse = repeater_grammar_no_cap.parse!("123\n456\n789")
-      parse.fail.must_equal nil
-      parse.tree.must_equal :no_capture
-      parse.num_satisfied.must_equal 3
+      assert_no_capture(3, parse)
     end
 
     it "no capture should parse one (202)" do
       repeater_grammar_no_cap.kind_of?(Grammar).must_equal true
       parse = repeater_grammar_no_cap.parse!("123")
-      parse.fail.must_equal nil
-      parse.tree.must_equal :no_capture
-      parse.num_satisfied.must_equal 1
+      assert_no_capture(1, parse)
     end
 
     def proto_sentence_g
@@ -108,9 +114,7 @@ module Hipe::Parsie
       parse = proto_sentence_g.parse!("a\nb")
       parse.tree.must(:concat, :sentence) do |arr|
         arr[0].must(:string,nil){|v| v.must_equal 'a'}
-        arr[1].kind_of?(Array).must_equal true
-        arr[1].size.must_equal 1
-        arr[1][0].must(:string, :b){|v| v.must_equal 'b'}
+        assert_range_parse_tree(:string, :b, %w(b), arr[1])
       end
       parse.unparse.must_equal ['a','b']
     end
@@ -119,10 +123,7 @@ module Hipe::Parsie
       parse = proto_sentence_g.parse!("a\nb\nb")
       parse.tree.must(:concat, :sentence) do |arr|
         arr[0].must(:string,nil){|v| v.must_equal 'a'}
-        arr[1].kind_of?(Array).must_equal true
-        arr[1].size.must_equal 2
-        arr[1][0].must(:string, :b){|v| v.must_equal 'b'}
-        arr[1][1].must(:string, :b){|v| v.must_equal 'b'}
+        assert_range_parse_tree(:string, :b, %w(b b), arr[1])
       end
       parse.unparse.must_equal ['a','b','b']
     end
@@ -241,13 +242,13 @@ module Hipe::Parsie
       tgt =
       ["Dick", " ", "and", " ", "Jane", " ", "climbed", " ", "a", " ", "tree",
        ".  ", "They", " ", "decided", " ", "to", " ", "get", " ", "married",
-       ". ", "", "They", " ", "didn't", " ", "get", " ", "married", " ",
+       ".", "", "They", " ", "didn't", " ", "get", " ", "married", " ",
        "for", " ", "love;", " ", "they", " ", "got", " ", "married", " ",
        "for", " ", "tax", " ", "purposes", ".", "", "Is", " ", "this", " ",
        "the", " ", "nature", " ", "of", " ", "the", " ", "universe", "?  ",
        "Maybe", ".  ", "But", " ", "it", " ", "is", " ", "certainly", " ",
       "the", "nature", " ", "of", " ", "them", "."]
-      parse.unparse.must_equal tgt
+      assert_array(tgt, parse.unparse)
     end
   end
 end
