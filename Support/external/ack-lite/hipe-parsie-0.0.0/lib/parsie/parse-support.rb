@@ -69,7 +69,7 @@ module Hipe
     # except the RootParse.  This makes some things easier.
     #
     class RootParseClass
-      include Singleton
+      include Singleton, CommonInstanceMethods
       attr_reader :parse_id
       def initialize
         @parse_id = Parses.register(self)
@@ -86,6 +86,15 @@ module Hipe
       end
       def only_child
         @only_child
+      end
+      def index_of_child_assert child
+        unless @only_child
+          no("no child of mine: #{child.short}. i have no children")
+        end
+        unless child == @only_child
+          no("no child of mine: #{child.short}. my child is #{@only_child.short}")
+        end
+        0
       end
       def only_child_assert
         no("no") unless @only_child
@@ -121,6 +130,8 @@ module Hipe
           ret = ret.read
         end
         ret
+      end
+      def validate_up
       end
       def each_existing_child &b
         block.call(only_child_assert, 0)

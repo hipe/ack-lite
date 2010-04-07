@@ -28,7 +28,7 @@ module Hipe
       end
       # needs childable below
       def ins
-        ui.puts "#{indent}#{short}"
+        ui.puts "#{indent}#{short}#{short_matched}"
       end
       def validate_down
         if (depth != parent.depth+1)
@@ -63,6 +63,9 @@ module Hipe
         @done = true
         @ok   = true
         SATISFIED | WANTS
+      end
+      def short_matched
+        (@ok && @done) ? ":\"#{@string}\"" : ''
       end
       def expecting
         (@ok && @done) ? [] : [@string.inspect]
@@ -141,6 +144,9 @@ module Hipe
           @done.inspect, @ok.inspect,
           blah, @symbol_name.inspect)
         s
+      end
+      def short_matched
+        (@ok && @done) ? "\"#{@md[0]}\"" : ''
       end
       def _unparse arr
         no("no") unless @ok

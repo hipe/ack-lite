@@ -93,8 +93,11 @@ module Hipe
       def inspct_tiny
         inspct nil, nil
       end
+      def ins
+        ui.puts "#{Inspecty::Indent*depth}#{short}"
+      end
       def short
-        "#<#{target.short}>"
+        "#<REF#{target.short}>"
       end
       def is_nil_parse?
         false
@@ -206,13 +209,13 @@ module Hipe
       def inspct ctxt, opts
         sprintf("#<RecursiveReference%s->%s", @my_parse_id, @target_parse_id)
       end
+
+      def short
+        "#<RecRef#{target.short}>"
+      end
+
       #
       # end common things
-
-
-      def ins
-        ui.puts "#{Inspecty::Indent*depth}#{short}"
-      end
 
       # the parent should already said it (?) no reason to repeat
       def expecting; [] end
