@@ -1,5 +1,4 @@
 require 'singleton'
-require File.dirname(__FILE__)+'/hookey.rb'
 require File.dirname(__FILE__)+'/parse-support-modules.rb'
 
 module Hipe
