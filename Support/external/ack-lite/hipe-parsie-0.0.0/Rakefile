@@ -11,6 +11,33 @@ end
 
 task :default => :test
 
+task :test => :"test-check-all"
+
+desc "make sure you aren't forgetting to add any test files"
+# For sanity we sometimes like to run the tests in a certain order
+# so that more low-level failure occur first (tests are independent though!)
+# so test files do not have a test_ name in front of them, except
+# for 'test_all.rb'.  This is the file that asserts the order.
+# This task makes sure that we haven't forgotten to add any files.
+#
+# this feels so wrong to code but so right to run
+#
+task :"test-check-all" do
+  test_dir = File.dirname(__FILE__)+'/test'
+  all_file = "#{test_dir}/test_all.rb"
+  lines = File.open(all_file).lines.to_a
+  names = []; lines.grep(%r{^require root \+ '/([^']+)'}){ names.push($1) }
+  these = Dir[test_dir+'/*.rb'].map{|x| File.basename(x) }
+  forgot = (these - ['test_all.rb']) - names
+  if forgot.any?
+    fail("did you forget to add "<<(forgot.join(' and '))<<" to "<<
+      File.basename(all_file) << "?"
+    )
+  else
+    puts "all #{these.size} test files are in #{File.basename(all_file)}"
+  end
+end
+
 
 desc "hack turns the installed gem into a symlink to this directory"
 
