@@ -1,4 +1,8 @@
+# because for now the grammar object is the one that is doing the parsing,
+# it is responsible for loading the necessary tokenizers:
+#
 require File.dirname(__FILE__)+'/tokenizers.rb'
+require File.dirname(__FILE__)+'/stackey-stream.rb'
 
 module Hipe
   module Parsie
