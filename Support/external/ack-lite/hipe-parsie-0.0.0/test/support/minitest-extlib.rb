@@ -13,9 +13,14 @@ class String
   end
 end
 
+
 module Hipe
   module Parsie
     module SpecExtension
+      #
+      # a lot of this may be supported by minitest already somehow,
+      # but we just didn't have the time to figure it out
+      #
       def skipit msg, &b; puts "skipping: #{msg}" end
       def skipbefore &b; end
       def self.extended obj
@@ -51,7 +56,9 @@ module Hipe
           if str.kind_of? String
             l, r = [tgt,str].map{|x| x.split(' ')}
             diff = Diff::LCS.diff(l, r)
-            puts("\nassert_string failure from "<< caller[0].stack_method << ':')
+            puts("\nassert_string failure from "<<
+              caller[0].stack_method << ':'
+            )
             puts diff.to_yaml
             assert(false, "#{msg}str equal failed. see diff")
           else
@@ -59,52 +66,6 @@ module Hipe
             assert(false, "#{msg}was not string: #{str.insp}")
           end
         end
-      end
-    end
-
-    module ParseTestAssertions
-      attr_accessor :test_context
-      def must_fail expected_msg
-        failed?.must_equal true
-        fail = self.fail
-        test_context.assert_kind_of ParseFail, fail
-        desc = fail.describe
-        desc.must_equal expected_msg
-      end
-    end
-
-    [StringParse, RegexpParse, UnionParse, ConcatParse,RangeParse].each do |x|
-      x.send(:include, ParseTestAssertions)
-    end
-
-    class Cfg
-      attr_accessor :test_context
-      def must_fail input_string, expected_msg
-        grammar = self
-        parse = grammar.parse! input_string
-        parse.test_context = test_context
-        parse.must_fail expected_msg
-      end
-      def satisfied_and_final_offset_must_be sat, final
-        parse = build_start_parse
-        have_sat = parse.satisfied_offset
-        have_fin = parse.final_offset
-        test_context.assert_equal(sat, have_sat, "satisfied offset")
-        test_context.assert_equal(final, have_fin, "final offset")
-      end
-    end
-
-    class ParseTree
-      include MiniTest::Assertions
-      def must need_type, need_name, size = nil
-        type.must_equal need_type
-        symbol_name.must_equal need_name
-        unless size.nil?
-          val = value
-          assert_kind_of Array, val
-          val.size.must_equal size
-        end
-        yield value if block_given?
       end
     end
   end

@@ -122,6 +122,44 @@ module Hipe
       end
     end
 
+    module MetaTools
+      #
+      # this might be a wrapper around thing that will be/have been
+      # added to ruby at some point
+      #
+      class << self
+        def enhance(thing)
+          add_class_singleton_accessor(thing)
+          define_define_method(thing.singleton_class)
+          # add_class_singleton_accessor(thing.singleton_class)
+          # define_define_method(thing.singleton_class.singleton_class)
+          thing
+        end
+        alias_method :[], :enhance
+      end
+    module_function
+      def add_class_singleton_accessor(thing)
+        unless thing.respond_to? :singleton_class
+          sing = class << thing; self end
+          sing.send(:define_method, :singleton_class){sing}
+        end
+        nil
+      end
+      def define_define_method(sing)
+        unless sing.respond_to? :define_method!
+          class << sing
+            def define_method! name, &block
+              if instance_methods.include? name.to_s
+                fail("won't override #{name} for #{self}. check respond_to?")
+              end
+              define_method(name, &block)
+            end
+          end
+        end
+      end
+    end
+
+
     class RegistryList
       include Enumerable # hm
       def initialize; @children = ArrayExtra[[]] end

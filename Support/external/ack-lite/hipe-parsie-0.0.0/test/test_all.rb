@@ -3,6 +3,7 @@ require 'ruby-debug'
 
 root =  File.dirname(__FILE__)
 # keep the format consistent below or see Rakefile
+require root + '/meta-tools.rb'
 require root + '/table.rb'
 require root + '/tokenizer.rb'
 require root + '/stackey-stream.rb'
