@@ -28,7 +28,7 @@ module Hipe::Parsie
         g.add :digit, /\A([0-9]+)\Z/
         g.test_context = self
       end
-      target = <<-'HERE'.test_strip(6)
+      target = <<-'HERE'.unmarginalize!(6)
         list   ::=  list digit.
         list   ::=  digit.
         digit  ::=  /\A([0-9]+)\Z/.

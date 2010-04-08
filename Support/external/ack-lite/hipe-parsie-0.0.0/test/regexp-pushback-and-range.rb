@@ -147,7 +147,7 @@ module Hipe::Parsie
     end
 
     it "whats happening here (301)" do
-      input_text = <<-HERE.test_strip(8)
+      input_text = <<-HERE.unmarginalize!
         Dick and Jane climbed a tree.
       HERE
       parse = sentence_grammar.parse!(input_text)
@@ -208,7 +208,7 @@ module Hipe::Parsie
     # i've had 18 straight whiskeys.  i think that's the record
 
     it "(507)" do
-      input_text = <<-HERE.test_strip(8)
+      input_text = <<-HERE.unmarginalize!
         foo bar.
       HERE
       parse = the_grammar.parse!(input_text)
@@ -217,7 +217,7 @@ module Hipe::Parsie
     end
 
     it "(508)" do
-      input_text = <<-HERE.test_strip(8)
+      input_text = <<-HERE.unmarginalize!
         foo
         bar.
       HERE
@@ -228,7 +228,7 @@ module Hipe::Parsie
 
 
     it "should parse two minimal paragraphs (510)" do
-      input_text = <<-HERE.test_strip(8)
+      input_text = <<-HERE.unmarginalize!
         Dick and Jane climbed a tree.  They decided to get married.
 
         They didn't get married for love; they got married for tax purposes.
