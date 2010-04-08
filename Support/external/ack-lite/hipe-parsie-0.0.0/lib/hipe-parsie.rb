@@ -1,10 +1,10 @@
 root = File.expand_path('../parsie',__FILE__)
 # order is important
 require root + '/general-support.rb'
+require root + '/parse-support.rb'
 require root + '/hookey.rb'
 require root + '/table.rb'
 require root + '/productions.rb'
-require root + '/parse-support.rb'
 require root + '/terminal-parsers.rb'
 require root + '/nonterminal-parsers.rb'
 require root + '/recursive-reference.rb'

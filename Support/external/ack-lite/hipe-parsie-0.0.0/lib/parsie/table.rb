@@ -11,7 +11,7 @@ module Hipe
                # also variously called a 'table' and 'grammar'.
                # experimentally, it is also the parser (but not the parse)
 
-      include CommonInstanceMethods
+      include No::No
       @all = Setesque.new
       class << self
         attr_reader :all

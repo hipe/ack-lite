@@ -74,7 +74,7 @@ module Hipe
     end
 
     module Productive
-      include CommonInstanceMethods
+      include No::No
       def symbol_name= name;
         Productive.make_getter(self,:symbol_name,name)
       end

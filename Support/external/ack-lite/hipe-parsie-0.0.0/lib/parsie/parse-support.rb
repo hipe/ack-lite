@@ -15,6 +15,48 @@ module Hipe
     #
     Parses = RegistryList.new
     Contexts = RegistryList.new
+    
+    
+    # error classes/modules
+    #
+    class Fail < RuntimeError
+      # base class for all exceptions originating from this library (?)
+    end
+
+    class No < Fail  # used to be called AppFail
+      # we did something wrong internally in this library
+      module No
+        def no *taxes
+          raise No.new(*taxes)
+        end
+      end
+    end
+        
+    class ParseFail < Fail
+      # half the reason parsers exist is to do a good job of reporting these
+      # then there's this
+
+      attr_reader :parse, :tokenizer
+
+      def self.from_parse_loop tokenizer, parse
+        ex = parse.expecting.uniq
+        expecting = ex.size == 0 ? 'no more input' : ex.join(' or ')
+        prepositional_phrase = tokenizer.describe
+        msg = "expecting #{expecting} #{prepositional_phrase}"
+        pf = ParseFail.new(msg)
+        pf.instance_variable_set('@parse', parse)
+        pf.instance_variable_set('@tokenizer', tokenizer)
+        pf
+      end
+
+      def describe
+        message
+      end
+    end
+    
+    class ParseParseFail < Fail
+      # something the user did wrong in construting a grammar
+    end
 
 
     # global debugging settings
@@ -46,7 +88,6 @@ module Hipe
     Debug = DebugClass.instance
 
 
-
     # some things (concat parse?) don't make parse objects until they
     # have to, but still we want something there in the slot for debugging
     # and easier implementation of aggregate and cascade functions
@@ -69,7 +110,7 @@ module Hipe
     # except the RootParse.  This makes some things easier.
     #
     class RootParseClass
-      include Singleton, CommonInstanceMethods
+      include Singleton, No::No
       attr_reader :parse_id
       def initialize
         @parse_id = Parses.register(self)
@@ -92,7 +133,8 @@ module Hipe
           no("no child of mine: #{child.short}. i have no children")
         end
         unless child == @only_child
-          no("no child of mine: #{child.short}. my child is #{@only_child.short}")
+          no("no child of mine: #{child.short}. my child is "<<
+          " #{@only_child.short}")
         end
         0
       end
@@ -151,7 +193,7 @@ module Hipe
     # this whole thing is begging for a refactor app wide @todo
     #
     module Decisioney
-      include CommonInstanceMethods # children usually want desc_bool?
+      include TypeMethods, No::No
       @meta = {
         :main_three  => [:wants, :satisfied, :open],
         :alt_two     => [:ok, :done],
@@ -278,7 +320,7 @@ module Hipe
     # during debugging
     #
     class ParseContext
-      include CommonInstanceMethods
+      include No::No
       @all = RegistryList.new
       class << self
         attr_reader :all

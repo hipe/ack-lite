@@ -64,7 +64,7 @@ module Hipe
     # we were avoiding this for some reason but ...
     #
     module Parsey
-      include CommonInstanceMethods, FaileyMcFailerson, StrictOkAndDone
+      include FaileyMcFailerson, StrictOkAndDone
 
       def parse_context
         ParseContext.all[@context_id]

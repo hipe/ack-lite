@@ -65,7 +65,7 @@ module Hipe
     # but we create an object of it below
     #
     class Reference
-      include CommonInstanceMethods, Childable
+      include No::No, Childable
       attr_reader :my_parse_id, :target_parse_id
       def initialize target_parse, parent=nil
         @target_parse_id = target_parse.parse_id

@@ -57,7 +57,7 @@ module Hipe
         def satisfied;  self.idxs_satisfied.size > 0 end
         def wants;      self.idxs_want.size > 0      end
 
-        include Decisioney, CommonInstanceMethods
+        include Decisioney
 
         class << self
           def main_props

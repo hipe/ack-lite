@@ -31,8 +31,6 @@ module Hipe
       # running the hooks we think we are running.
       #
 
-      include CommonInstanceMethods # no()
-
       class DefinedHooks
         attr_reader :onces, :singles
         def initialize
@@ -72,7 +70,7 @@ module Hipe
         set_name = opts[:set_hook_with] || "set_hook_#{hook_name}".to_sym
         has_name = "has_hook_#{hook_name}".to_sym
         pop_name = "pop_hook_#{hook_name}".to_sym
-        no("won't redefine a hook") if defined_hooks.singles.has?(hook_name)
+        fail("won't redefine a hook") if defined_hooks.singles.has?(hook_name)
         defined_hooks.singles[hook_name] = true
         module_eval do
           define_method(has_name) do
@@ -80,9 +78,9 @@ module Hipe
           end
 
           define_method(set_name) do |&block|
-            no("no") unless block # will kill our each logic below
+            fail("no") unless block # will kill our each logic below
             if hooks.singles.has?(hook_name)
-              no("#{hook_name} hook already occupying slot for this single hook")
+              fail("#{hook_name} hook already occupying slot for this single hook")
             end
             hooks.singles[hook_name] = block
           end
@@ -98,7 +96,7 @@ module Hipe
         add_name = opts[:set_hook_with] || "hook_once_#{hook_name}".to_sym
         has_name = "has_any_hook_once_#{hook_name}".to_sym
         run_name = "run_hook_onces_#{hook_name}".to_sym
-        no("won't redefine a hook") if defined_hooks.onces.has?(hook_name)
+        fail("won't redefine a hook") if defined_hooks.onces.has?(hook_name)
         defined_hooks.onces.add(hook_name)
         module_eval do
           define_method(has_name) do
@@ -106,7 +104,7 @@ module Hipe
           end
 
           define_method(add_name) do |&block|
-            no("no") unless block # will kill our each logic below
+            fail("no") unless block # will kill our each logic below
             hooks.onces[hook_name] << block
           end
 

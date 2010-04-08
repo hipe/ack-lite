@@ -1,48 +1,5 @@
 module Hipe
   module Parsie
-    # move these
-
-    class Fail < RuntimeError
-      # base class for all exceptions originating from this library
-    end
-
-    class AppFail < Fail
-      # we did something wrong internally in this library
-      def self.no *args
-        raise No.new(*args)
-      end
-    end
-
-    No = AppFail # internal shorthand
-
-    class ParseParseFail < Fail
-      # something the user did wrong in construting a grammar
-    end
-
-    class ParseFail < Fail
-      # half the reason parsers exist is to do a good job of reporting these
-      # then there's this
-
-      attr_reader :parse, :tokenizer
-
-      def self.from_parse_loop tokenizer, parse
-        ex = parse.expecting.uniq
-        expecting = ex.size == 0 ? 'no more input' : ex.join(' or ')
-        prepositional_phrase = tokenizer.describe
-        msg = "expecting #{expecting} #{prepositional_phrase}"
-        pf = ParseFail.new(msg)
-        pf.instance_variable_set('@parse', parse)
-        pf.instance_variable_set('@tokenizer', tokenizer)
-        pf
-      end
-
-      def describe
-        message
-      end
-    end
-
-    # end move
-
 
     module ArrayExtra
       def self.[] ary
@@ -64,6 +21,7 @@ module Hipe
         'done.'
       end
     end
+
     module AttrAccessors
       def boolean_accessor *names
         names.each do |name|
@@ -87,15 +45,12 @@ module Hipe
     end
 
 
-    module CommonInstanceMethods
+    module TypeMethods
       def bool? mixed
         [TrueClass,FalseClass].include? mixed.class
       end
       def desc_bool name
         "#{name}=#{send(name).inspect}"
-      end
-      def no taxes
-        raise No.new taxes
       end
     end
 
@@ -189,21 +144,8 @@ module Hipe
     end
 
 
-
     class Setesque
-      include CommonInstanceMethods
-      #class Enumerator
-      #  include Enumerable
-      #  def initialize settie
-      #    @thing = settie
-      #  end
-      #  def each
-      #    @thing.each do |p|
-      #      obj = @thing.retrieve p[0]
-      #      yield [p[0], obj]
-      #    end
-      #  end
-      #end
+      # removed Enumerator in ef9ea
       def initialize(name = 'set',&retrieve_block)
         @name = name
         @children = {}
@@ -238,20 +180,20 @@ module Hipe
       end
       def has? key; @children.has_key? key end
       def register key, obj
-        no(%{won't redefine "#{key}" grammar}) if
+        fail("won't redefine #{key.inspect}") if
           @children.has_key? key
         @order.push(key)
         @children[key] = obj
         nil
       end
       def replace key, obj
-        no(%{need a key to replace}) unless @children.has_key? key
+        fail("need a key to replace") unless @children.has_key? key
         old = @children[key]
         @children[key] = obj
         old
       end
       def remove key
-        no("no") unless @children.has_key? key
+        fail("no") unless @children.has_key? key
         @order.delete(key)
         @children.delete(key)
       end
