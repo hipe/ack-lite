@@ -2,7 +2,6 @@ require File.dirname(__FILE__)+'/support/common-setup.rb'
 unless  Hipe::Parsie.constants.include? 'LooksLike'
   require File.expand_path('../../lib/parsie/looks-like.rb', __FILE__)
 end
-debugger; 'x'
 
 module Fake
   LooksLike = Hipe::Parsie::LooksLike
