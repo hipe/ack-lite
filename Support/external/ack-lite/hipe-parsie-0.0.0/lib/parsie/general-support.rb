@@ -11,12 +11,17 @@ module Hipe
       def no taxes
         raise No.new taxes
       end
-      def oxford_comma items, sep, comma=', '
+    end
+    module Lingual
+      def oxford_comma items, sep=' and ', comma=', '
         return '()' if items.size == 0
         return items[0] if items.size == 1
         seps = [sep, '']
-        seps.insert(0,*Array.new(items.size - seps.size, comma))
+        seps[0,0] = Array.new(items.size - seps.size, comma)
         items.zip(seps).flatten.join('')
+      end
+      def const_basename mod
+        mod.to_s.match(/(?:^|:)([^:]+)$/)[1]
       end
     end
 
