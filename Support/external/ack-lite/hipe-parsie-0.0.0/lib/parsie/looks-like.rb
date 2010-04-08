@@ -9,8 +9,8 @@ module Hipe
       # that is must not respond_to?
       #
       # See test for examples.
-      
-      
+
+
       class << self
         def enhance mod
           thing = SpeechSituation.new(mod)
@@ -27,7 +27,7 @@ module Hipe
           define_method("#{meth}=") do |x|
             unless self.send(meth).nil?
               fail("#{const_basename(self.class)} for #{const_basename(@mod)} "<<
-              "already has #{meth} set: #{send(meth).inspect}") 
+              "already has #{meth} set: #{send(meth).inspect}")
             end
             if %w(responds_to wont_override).include? meth
               if x.size == 1 && x[0].kind_of?(Array)
@@ -92,7 +92,7 @@ module Hipe
         end
         def looks_like_if_responds_to?(looks_like, responds_to)
           @mod.looks.looks_like = looks_like
-          @mod.looks.responds_to = responds_to          
+          @mod.looks.responds_to = responds_to
           fail("no") if @done
           @done = true
           looks_like_meth = "looks_like_#{looks_like}?"
@@ -112,8 +112,8 @@ module Hipe
           }
           self
         end
-      end      
+      end
     end
   end
 end
- 
+
