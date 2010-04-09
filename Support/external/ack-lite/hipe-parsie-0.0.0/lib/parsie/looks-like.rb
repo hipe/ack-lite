@@ -2,114 +2,201 @@ module Hipe
   module Parsie
     module LooksLike
       #
-      # dubious metaprogramming.
+      # Lazy interface inference. (dubious metaprogramming?)
+      #
       # Let a class or a module define the types of objects it can
       # either construct with or enhance based on a set of methods
       # those objects must respond_to? and optionally a set of methods
       # that is must not respond_to?
       #
       # See test for examples.
-
+      #
+      # You might think that this is dumb and overkill but the fact
+      # is that StringIO 'looks like' an IO but is not a kind_of? IO
+      # so we end up with this pattern of lists of methods we need
+      # to check for for things.  Without something like this there
+      # is a lot of repetition in code for checking this stuff.
+      #
+      # depends: Lingual(const_basename), MetaTools
+      #
 
       class << self
         def enhance mod
-          thing = SpeechSituation.new(mod)
-          yield(thing) if block_given?
-          thing
+          voice = SpeechSituation.new(mod)
+          if block_given?
+            yield(voice)
+            mod.looks.validate
+          end
+          voice
         end
       end
-      class Looker < Struct.new(:looks_like, :responds_to, :wont_override)
+
+      class Look
+        #
+        # a "look" is a lazy interface (a list of method names)
+        # and possibly a list of methods the thing won't override.
+        #
         include Lingual
+
         def initialize mod
-          @mod = mod
+          @module = mod
+          @responds_to = @name = @wont_override = nil
+          @infected = false
         end
-        %w(looks_like responds_to wont_override).each do |meth|
-          define_method("#{meth}=") do |x|
-            unless self.send(meth).nil?
-              fail("#{const_basename(self.class)} for #{const_basename(@mod)} "<<
-              "already has #{meth} set: #{send(meth).inspect}")
+
+        attr_accessor :module, :infected
+        alias_method :infected?, :infected
+
+        def name
+          @name
+        end
+
+        def name= foo
+          fail("won't clobber name") unless @name.nil?
+          fail("let's stick with symbols") unless foo.kind_of?(::Symbol)
+          @name = foo
+        end
+
+        def shortname
+          const_basename(self.module.to_s)
+        end
+
+        def methods_missing(mix)
+          responds_to.select{|meth| ! mix.respond_to?(meth)}
+        end
+
+        def methods_blacklist(mix)
+          wont_override.select{|meth| mix.respond_to?(meth)}
+        end
+
+        def ok?(mix)
+          methods_missing(mix).empty? && methods_blacklist(mix).empty?
+        end
+
+        def not_ok_because(mix)
+          ss = []
+          if (bad = methods_missing(mix)).any?
+            ss.push( "it doesn't respond to " << oxford_comma(bad,' or ') )
+          end
+          if (bad = methods_blacklist(mix)).any?
+            ss.push( "it already responds to " << oxford_comma(bad) )
+          end
+          if ss.any?
+            ss = [oxford_comma(ss)]
+            ss.unshift "it couldn't be used as a #{shortname} because"
+          end
+          ss.join(' ')
+        end
+
+        # create strict setters and lazy getters for the two properties
+        %w(wont_override responds_to).each do |meth|
+          define_method(meth) do
+            if instance_variable_get("@#{meth}").nil?
+              instance_variable_set("@#{meth}",[])
             end
-            if %w(responds_to wont_override).include? meth
-              if x.size == 1 && x[0].kind_of?(Array)
-                x = x[0]
-              end
+            instance_variable_get "@#{meth}"
+          end
+          define_method("#{meth}=") do |foo|
+            # responds_to %w(foo bar)  instead of responds_to *%w(foo bar)
+            if foo.kind_of?(Array) && foo.size == 1 && foo[0].kind_of?(Array)
+              foo = foo[0]
             end
-            super(x)
+            unless send(meth).empty?
+              fail("won't clobber @#{meth}")
+            end
+            fail("must be array, not #{foo.inspect}") unless
+              foo.kind_of?(Array)
+            if (bad = foo.map(&:class) - [String, Symbol]).any?
+              fail("bad types for array for #{meth}=: "<<
+                bad.map(&:to_s).map(&:inspect).join(', ')
+              )
+            end
+            instance_variable_set("@#{meth}", foo)
           end
         end
+
+        def valid?
+          ! name.nil? && responds_to.any?
+        end
+
+        def validate
+          fail("a look must have one or more methods") unless
+            responds_to.any?
+          fail("a look must have a name") if name.nil?
+        end
+
+        def infect
+          fail("won't infect twice") if infected?
+          fail("won't infect until valid") unless valid?
+
+          looks_like_meth = "looks_like_#{name}?"
+          couldnt_meth    = "doesnt_look_like_#{name}_because"
+
+          self.module.singleton_class.define_method!(looks_like_meth) do |mix|
+            looks.ok?(mix)
+          end
+
+          self.module.singleton_class.define_method!(couldnt_meth) do |mix|
+            looks.not_ok_because(mix)
+          end
+
+          @infected = true
+          nil
+        end
+
         def describe
-          s = "to be a #{const_basename(@mod)} it must define " << oxford_comma(
-          responds_to.map(&:to_s)) << '.'
+          s = "to be a #{shortname} it must define "<<
+           oxford_comma(responds_to.map(&:to_s)) << '.'
           if wont_override && wont_override.any?
-            s << " #{const_basename(@mod)} will not override " << oxford_comma(
-            wont_override.map(&:to_s)) << '.'
+            s << " #{shortname} will not override " <<
+             oxford_comma(wont_override.map(&:to_s)) << '.'
           end
           s
         end
       end
+
       class SpeechSituation
-        include Lingual
+        #
+        # This this is totally internal to this lib.  @api private
+        # it is the one that actually does the doing when you call
+        # LooksLike.enhance().  an object of it gets returned from that call,
+        # and yielded to any block used in that call.
+        #
+        # This object does not persist.  It is only around during this
+        # few lines of code during the definition phase.
+        #
+
         def initialize(mod)
-          @mod = mod
-          @responds_to = @looks_like = @done = nil
-          meta = class << mod; self end
-          meta.send(:define_method, :singleton_class){meta}
-          meta.send(:define_method, :define_method!){|name,&block|
-            fail("no") if instance_methods.include?(name)
-            define_method(name,&block)
-          }
-          class << meta
-            def define_method! name, &block
-              fail("no: #{name}") if instance_methods.include?(name)
-              define_method(name, &block)
-            end
-          end
-          looker = Looker.new(mod)
-          block = proc{looker}
-          mod.define_method!('looks',&block)
-          mod.singleton_class.define_method!('looks',&block)
+          look = Look.new(MetaTools[mod])
+          @look = look
+          block = proc{look}
+          mod.singleton_class.define_method!(:looks, &block)
+          nil
         end
-        def if_responds_to? *if_responds_to
-          fail("no") if @if_responds_to
-          @if_responds_to = if_responds_to
-          if @looks_like
-            looks_like_if_responds_to?(@looks_like, if_responds_to)
+
+      private
+        attr_accessor :look
+      public
+
+        def if_responds_to? *meths
+          look.responds_to = meths
+          if look.valid? && ! look.infected?
+            look.infect
           end
           self
         end
         alias_method :when_responds_to, :if_responds_to?
+
         def looks_like looks_like
-          fail("no") if @looks_like
-          @looks_like = looks_like
-          if @if_responds_to
-            looks_like_if_responds_to?(looks_like, @if_responds_to)
+          look.name = looks_like
+          if look.valid? && ! look.infected?
+            look.infect
           end
           self
         end
+
         def wont_override(*meth)
-          @mod.looks.wont_override = meth
-          self
-        end
-        def looks_like_if_responds_to?(looks_like, responds_to)
-          @mod.looks.looks_like = looks_like
-          @mod.looks.responds_to = responds_to
-          fail("no") if @done
-          @done = true
-          looks_like_meth = "looks_like_#{looks_like}?"
-          doesnt_look_meth = "doesnt_look_like_#{looks_like}_because"
-          couldnt_use_meth = "couldnt_use_it_because"
-          @mod.singleton_class.define_method!(doesnt_look_meth){|mix|
-            responds_to.select{|meth| ! mix.respond_to?(meth)}
-          }
-          @mod.singleton_class.define_method!(looks_like_meth){|mix|
-            send(doesnt_look_meth,mix).empty?
-          }
-          @mod.singleton_class.define_method!(couldnt_use_meth){|mix|
-            "it couldn't be used as a #{const_basename(me)} because "<<
-            "it doesn't respond to " << oxford_comma(
-              send(doesnt_look_meth,mix)
-            )
-          }
+          look.wont_override = meth
           self
         end
       end

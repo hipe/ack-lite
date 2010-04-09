@@ -129,6 +129,7 @@ module Hipe
       #
       class << self
         def enhance(thing)
+          define_define_method(thing) if thing.kind_of?(Module)
           add_class_singleton_accessor(thing)
           define_define_method(thing.singleton_class)
           # add_class_singleton_accessor(thing.singleton_class)

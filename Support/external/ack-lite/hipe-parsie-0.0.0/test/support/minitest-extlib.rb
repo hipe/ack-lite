@@ -51,7 +51,7 @@ module Hipe
         if tgt == str
           assert_equal tgt, str
         else
-          debugger
+          # debugger
           msg = msg.nil? ? nil : "#{msg} - "
           if str.kind_of? String
             l, r = [tgt,str].map{|x| x.split(' ')}
