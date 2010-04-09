@@ -24,22 +24,29 @@ module Hipe
           fail("had #{all.size} #{sym.inspect}. use all().")
         end
       end
+      def names
+        map{|x| ( x.kind_of?(Array) && x.any? ) ? x[0] : nil }.compact
+      end
       def unjoin
         if size != 3 then fail(
           "need three to unjoin had #{size} for #{self[0]}"
         ) end
-        thing = Array.new([self[1], *self[2][1].all(self[1][0])])
+        if self[2][1]
+          thing = [self[1], *self[2][1].all(self[1][0])]
+        else
+          thing = [self[1]]
+        end
         thing
       end
       def to_hash
-        Hash[ self[1..-1].map do |x|
+        HashExtra[Hash[ self[1..-1].map do |x|
           val = x.size==2 ? x[1] : x[1..-1]
           if val.nil?
             nil
           else
             [x[0], val]
           end
-        end.compact ]
+        end.compact ]]
       end
     end
   end
