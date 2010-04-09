@@ -46,14 +46,15 @@ module Hipe
         yield self
       end
 
-      DefaultOpts = Object.new
-      class << DefaultOpts
-        def notice_stream; $stout end
-        def verbose?;      nil    end
-      end
+      DefaultOpts = {
+        :notice_stream => $stdout,
+        :verbose?      => nil
+      }
 
-      def parse! mixed, opts=DefaultOpts
+      def parse! mixed, opts={}
+        opts = HashExtra[DefaultOpts.merge(opts)].methodize_keys!
         process_opts opts
+
         ctxt = ParseContext.new
         tokenizer = induce_tokenizer mixed
         parse = build_start_parse ctxt

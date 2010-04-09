@@ -44,16 +44,36 @@ module Hipe
       end
     end
 
+    module HashExtra
+      # this is copy-pasted from man-parse. don't etc etc
+      class << self; def [](mixed); mixed.extend(self); end end
 
-    module TypeMethods
-      def bool? mixed
-        [TrueClass,FalseClass].include? mixed.class
+      def values_at *indices
+        indices.map{|key| self[key]}
       end
-      def desc_bool name
-        "#{name}=#{send(name).inspect}"
+      def methodize_keys! *ks
+        (ks.any? ? ks : keys).each do |k|
+          getter_unless_defined k, k
+        end
+        self
+      end
+      def getter_unless_defined key, meth
+        unless respond_to?(meth)
+          meta.send(:define_method, meth){self[key]}
+        end
+      end
+      def slice *indices
+        result = HashExtra[Hash.new]
+        indices.each do |key|
+          result[key] = self[key] if has_key?(key)
+        end
+        result
+      end
+    private
+      def meta
+        class << self; self end
       end
     end
-
 
     class InspectContext
       attr_accessor :indent
@@ -316,6 +336,15 @@ module Hipe
       end
       def obj_diff(a,b)
         a == b ? [] : [a,b]
+      end
+    end
+
+    module TypeMethods
+      def bool? mixed
+        [TrueClass,FalseClass].include? mixed.class
+      end
+      def desc_bool name
+        "#{name}=#{send(name).inspect}"
       end
     end
   end
