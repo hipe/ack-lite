@@ -11,7 +11,7 @@ module Hipe
                # also variously called a 'table' and 'grammar'.
                # experimentally, it is also the parser (but not the parse)
 
-      include No::No
+      include No::No, Lingual
       @all = Setesque.new
       class << self
         attr_reader :all
@@ -55,7 +55,7 @@ module Hipe
       def parse! mixed, opts=DefaultOpts
         process_opts opts
         ctxt = ParseContext.new
-        tokenizer = build_tokenizer mixed
+        tokenizer = induce_tokenizer mixed
         parse = build_start_parse ctxt
 
         while ( ! parse.done? ) && ( token = tokenizer.peek )
@@ -89,6 +89,34 @@ module Hipe
         # sux
         parse.test_context = test_context if parse.respond_to? :test_context=
         parse
+      end
+
+      #
+      # for now, it will take anything that looks like a tokenizer,
+      # string, or input stream and it might change it to make a tokenzizer
+      # out of it. raises parse failure otherwise.
+      #
+      def induce_tokenizer mixed
+        rslt =
+        if AbstractTokenizer.looks_like_tokenizer?(mixed)
+          mixed
+        elsif StringLinesTokenizer.looks_like_string?(mixed)
+          StringLinesTokenizer.new(mixed)
+        elsif StackeyStream.looks_like_stream?(mixed)
+          StackeyStream[mixed]
+        else
+          fails = [
+            StringLinesTokenizer, StackeyStream, AbstractTokenizer
+          ].map{|x| x.looks.not_ok_because(mixed) }
+          raise ParseFail.new(it_is(mixed.class, oxford_comma(fails)))
+        end
+
+        unless AbstractTokenizer.looks_like_tokenizer?(rslt)
+          fail(it_is(
+            mixed.class, AbstractTokenizer.looks.not_ok_because(rslt)
+          ))
+        end
+        rslt
       end
 
       def symbol name
@@ -151,7 +179,8 @@ module Hipe
         @productions << prod
       end
 
-      # the argument is given a default just for testing
+      # default arg just for testing
+      #
       def build_start_parse ctxt= ParseContext.new
         base_production = symbol(start_symbol_name)
         # we set the root parse child in a hook so that we can
@@ -198,7 +227,9 @@ module Hipe
         case mixed
           when Regexp; RegexpProduction.new(mixed,prod_opts)
           when Symbol; SymbolReference.new(mixed)
-          when Array;  ConcatProduction.factory(self, mixed, prod_opts, &block)
+          when Array;  ConcatProduction.factory(
+            self, mixed, prod_opts, &block
+          )
           when String; StringProduction.new(mixed)
           else raise ParseParseFail.new("no: #{mixed.inspect}")
         end
@@ -242,30 +273,6 @@ module Hipe
           "use start_symbol_name? to check first")
         end
         @start_symbol_name
-      end
-
-      def build_tokenizer mixed
-        case mixed
-        when String; StringLinesTokenizer.new(mixed)
-        else
-          if looks_like_stack?(mixed)
-            StackTokenizerAdapter[mixed]
-          else
-            these = doesnt_look_like_stack_because(mixed)
-            raise ParseParseFail.new(
-              "Can't build tokenizer from  #{mixed.inspect} because "<<
-              "it is not a string and it doesn't implement "<<
-              oxford_comma(these,' and ')
-            )
-          end
-        end
-      end
-
-      %w(
-        looks_like_stack?
-        doesnt_look_like_stack_because
-      ).each do |meth|
-        define_method(meth){|*mix| StackTokenizerAdapter.send(meth,*mix) }
       end
 
       def process_opts opts

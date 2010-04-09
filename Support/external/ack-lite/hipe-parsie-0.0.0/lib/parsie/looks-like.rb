@@ -75,10 +75,10 @@ module Hipe
 
         def not_ok_because(mix)
           ss = []
-          if (bad = methods_missing(mix)).any?
+          if (bad = methods_missing(mix).map(&:to_s)).any?
             ss.push( "it doesn't respond to " << oxford_comma(bad,' or ') )
           end
-          if (bad = methods_blacklist(mix)).any?
+          if (bad = methods_blacklist(mix).map(&:to_s)).any?
             ss.push( "it already responds to " << oxford_comma(bad) )
           end
           if ss.any?

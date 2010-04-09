@@ -5,7 +5,7 @@ module Hipe
       # modified from hipe-core
 
       LooksLike.enhance(self) do |l|
-        l.looks_like(:stack).if_responds_to? %w(closed? gets)
+        l.looks_like(:stream).if_responds_to? %w(closed? gets)
         l.wont_override %w(push pop peek offset)
       end
 
@@ -13,7 +13,7 @@ module Hipe
 
         def enhance(mixed)
           unless looks.ok?(mixed)
-            fail(doesnt_look_ok_because(mixed))
+            fail(looks.not_ok_because(mixed))
           end
           MetaTools[mixed]
           mixed.extend self

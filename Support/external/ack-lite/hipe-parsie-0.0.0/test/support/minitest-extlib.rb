@@ -3,7 +3,8 @@ require 'diff/lcs'
 class String
   def unmarginalize! n=nil
     n ||= /\A *(?! )/.match(self)[0].length
-    gsub!(/(?:^ {#{n}}|\n\Z)/, '')
+    gsub!(/^ {#{n}}/, '')
+    gsub!(/\n\Z/,'') # remove one trailing newline, b/c this is so common
   end
   def one_line!
     gsub!(/\n/,' ')

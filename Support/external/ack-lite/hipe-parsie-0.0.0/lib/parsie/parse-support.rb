@@ -15,8 +15,8 @@ module Hipe
     #
     Parses = RegistryList.new
     Contexts = RegistryList.new
-    
-    
+
+
     # error classes/modules
     #
     class Fail < RuntimeError
@@ -31,7 +31,7 @@ module Hipe
         end
       end
     end
-        
+
     class ParseFail < Fail
       # half the reason parsers exist is to do a good job of reporting these
       # then there's this
@@ -53,7 +53,7 @@ module Hipe
         message
       end
     end
-    
+
     class ParseParseFail < Fail
       # something the user did wrong in construting a grammar
     end

@@ -3,7 +3,7 @@ module Hipe
   module Parsie
     module AbstractTokenizer
       LooksLike.enhance(self).looks_like(:tokenizer).when_responds_to(*%w(
-        offset never_had_tokens?  has_no_more_tokens? get_context_near_end
+        never_had_tokens?  has_no_more_tokens? get_context_near_end
         get_context_near peek pop! push
       ))
     end

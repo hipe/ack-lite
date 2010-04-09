@@ -120,6 +120,9 @@ module Hipe
       def const_basename mod
         mod.to_s.match(/(?:^|:)([^:]+)$/)[1]
       end
+      def it_is needle, haystack
+        haystack.sub(/\bit\b/,needle.to_s)
+      end
     end
 
     module MetaTools
