@@ -119,7 +119,9 @@ module Hipe
         if parent.depth.nil?
           no("where is depth?")
         end
-        really_stupid_heapy_terminal_parse_build StringParse, ctxt, parent, nil
+        really_stupid_heapy_terminal_parse_build(
+          StringParse, ctxt, parent, nil
+        )
       end
       def to_bnf_rhs; @string_literal.inspect end
       def zero_width?
@@ -139,7 +141,9 @@ module Hipe
         @re = re
       end
       def build_parse ctxt, parent, opts=nil
-        really_stupid_heapy_terminal_parse_build RegexpParse, ctxt, parent, @re_opts
+        really_stupid_heapy_terminal_parse_build(
+          RegexpParse, ctxt, parent, @re_opts
+        )
       end
       # @todo not bnf!
       def to_bnf_rhs;
@@ -149,8 +153,26 @@ module Hipe
       def has_children?; false end
     end
 
+    class StopSymbol
+      include Productive
+      def zero_width?; true end
+      def build_parse ctxt, parent, opts=nil
+        StopParse.new(self, ctxt, parent, opts)
+      end
+    end
+
     class SymbolReference
       include Productive
+      class << self
+        def factory symbol_name, mixed
+          if mixed == :stop && symbol_name == :stop
+            StopSymbol.new
+          else
+            new(mixed)
+          end
+        end
+      end
+
       attr_reader :target_symbol_name
       def initialize symbol_name
         @target_symbol_name = symbol_name
@@ -198,7 +220,9 @@ module Hipe
       def _building_this_parser= foo
         @building_this_parser = foo
       end
-      def nonterminal_common_build_parse parse_class, ctxt, parent, opts = {}, &block
+      def nonterminal_common_build_parse(
+        parse_class, ctxt, parent, opts = {}, &block
+      )
         no('no be a parent you have to have depth') if parent.depth.nil?
         if @building_this_parser
           if opts[:recursive_hook]
@@ -211,8 +235,10 @@ module Hipe
         else
           parser = parse_class.new(self, ctxt, parent, &block) #:note2
           no('you need depth') if parser.depth.nil?
-          @building_this_parser = parser  # note building children in a second step
-          parser.build_children! opts     # allows us to make recurive references
+          @building_this_parser = parser
+            # note building children in a second step
+          parser.build_children! opts
+             # allows us to make recurive references
           @building_this_parser = nil
           rslt = parser
         end
@@ -288,7 +314,7 @@ module Hipe
       def initialize grammar, ary
         nonterminal_common_init_locks
         @children = ary.map do |x|
-          prod = grammar.build_production(x,[String, Symbol, Array])
+          prod = grammar.build_production(nil, x,[String, Symbol, Array])
           prod.table_name = grammar.table_name
           # as they are only strings or symbol references, they don't
           # need to register with the table and get production ids, etc
@@ -307,7 +333,9 @@ module Hipe
         @zero_width
       end
       def build_parse ctxt, parent, opts={}, &block
-        nonterminal_common_build_parse(ConcatParse, ctxt, parent, opts, &block)
+        nonterminal_common_build_parse(
+          ConcatParse, ctxt, parent, opts, &block
+        )
       end
       def determine_offsets!
         @zero_width_map = @children.map(&:zero_width?)
@@ -359,7 +387,7 @@ module Hipe
         no("never") unless ary[0].kind_of? Range
         @range = ary[0]
         @opts = opts
-        child = grammar.build_production(ary[1],[Symbol, Array])
+        child = grammar.build_production(nil,ary[1],[Symbol, Array])
         if child.respond_to?(:symbol_name=)
           child.symbol_name = false
         end

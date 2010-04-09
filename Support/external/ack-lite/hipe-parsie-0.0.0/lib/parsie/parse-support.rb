@@ -27,7 +27,7 @@ module Hipe
       # we did something wrong internally in this library
       module No
         def no *taxes
-          raise No.new(*taxes)
+          raise Hipe::Parsie::No.new(*taxes)
         end
       end
     end
@@ -312,12 +312,12 @@ module Hipe
       protected :initialize
     end
 
-    # we weren't sure what we would need this for when we started
-    # passing it around to every parser during the course of a parse,
-    # but in case we do need it it is here
-    #
-    # The one thing it is useful for is showing the 'parse tic'
-    # during debugging
+    # the ParseContext is one universal object that all parsers share
+    # and have access to during the lifetime of the parse.
+    # It can be used to see which 'tic' we are on for debugging
+    # (a 'tic' is sorta like a token offset.)  Also it holds a handle
+    # to the tokenizer if for some reason that is useful to
+    # the parser (also for debugging.)
     #
     class ParseContext
       include No::No
@@ -326,13 +326,28 @@ module Hipe
         attr_reader :all
       end
       attr_reader :context_id, :tic
+      attr_accessor :tokenizer
       def initialize
+        @stop = false
+        @tokenzier = nil
         @tic = 0
         @context_id = self.class.all.register(self)
         @token_locks = Hash.new do |h,k|
           h[k] = Setesque.new(k)
         end
         @pushbacks = []
+        @stop_parses = []
+      end
+      def stop?
+        @stop
+      end
+      def stop_parse! parse
+        @stop_parses.push(parse)
+        @stop = true
+        nil
+      end
+      def stop_parses
+        @stop_parses
       end
       def tic!
         @tic += 1
@@ -341,6 +356,7 @@ module Hipe
       end
       def pushback obj
         if @pushbacks.size > 0
+          debugger; 'x'
           no("for now can't take more than one pushback per tic")
         end
         @pushbacks.push obj
@@ -400,7 +416,7 @@ module Hipe
       end
       def sexp
         case type
-        when :regexp, :string
+        when :regexp, :string, :stop
           s[symbol_name, *value]
         when :concat, :range
           val = value

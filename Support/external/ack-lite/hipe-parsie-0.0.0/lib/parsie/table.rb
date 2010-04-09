@@ -57,6 +57,7 @@ module Hipe
 
         ctxt = ParseContext.new
         tokenizer = induce_tokenizer mixed
+        ctxt.tokenizer = tokenizer
         parse = build_start_parse ctxt
 
         while ( ! parse.done? ) && ( token = tokenizer.peek )
@@ -69,7 +70,9 @@ module Hipe
           if 0 != WANTS & resp
             parse.take! token
             tokenizer.pop!  # do a conditional that runs a hook here
-            if ctxt.pushback?
+            if ctxt.stop?
+              break
+            elsif ctxt.pushback?
               str = ctxt.pushback_pop.string
               Debug.puts "PUSING BACK: #{str.inspect}" if Debug.verbose?
               tokenizer.push str
@@ -81,7 +84,7 @@ module Hipe
         end
         if ! parse.ok?
           pf = ParseFail.from_parse_loop(tokenizer, parse)
-        elsif tokenizer.has_more_tokens?
+        elsif !ctxt.stop? && tokenizer.has_more_tokens?
           pf = ParseFail.from_parse_loop(tokenizer, parse)
         else
           pf = nil
@@ -131,7 +134,7 @@ module Hipe
         @start_symbol_name = symbol_name if symbols.size == 0
         prod = nil
         begin
-          prod = build_production mixed, nil, prod_opts, &block
+          prod = build_production symbol_name, mixed, nil, prod_opts, &block
         rescue ParseParseFail=>e
           return parse_parse_fail e, symbol_name, mixed
         end
@@ -216,7 +219,9 @@ module Hipe
         end
       end
 
-      def build_production mixed, allowed=nil, prod_opts={}, &block
+      def build_production(
+        symbol_name, mixed, allowed=nil, prod_opts={}, &block
+      )
         if allowed
           unless allowed.detect{|x| mixed.kind_of? x }
             raise ParseParseFail.new("can't use #{mixed.class.inspect}"<<
@@ -227,7 +232,7 @@ module Hipe
         prod =
         case mixed
           when Regexp; RegexpProduction.new(mixed,prod_opts)
-          when Symbol; SymbolReference.new(mixed)
+          when Symbol; SymbolReference.factory(symbol_name, mixed)
           when Array;  ConcatProduction.factory(
             self, mixed, prod_opts, &block
           )

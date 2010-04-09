@@ -38,6 +38,29 @@ module Hipe
       end
     end
 
+
+    class StopParse
+      include TerminalParsey
+      def initialize prod, ctxt, parent, opts
+        @opts = opts # almost always throwaway empty
+        @production_id = prod
+        @context_id = ctxt.context_id
+        self.parent_id = parent.parse_id
+      end
+      def look token
+        (SATISFIED | WANTS)
+      end
+      def take! token
+        parse_context.stop_parse!(self)
+        (SATISFIED | WANTS)
+      end
+      def tree
+        @tree ||= begin
+          ParseTree.new(:string, :stop, @production_id, :stop)
+        end
+      end
+    end
+
     class StringParse
       include TerminalParsey
       def initialize prod, ctxt, parent, _
@@ -107,6 +130,7 @@ module Hipe
       def initialize production, ctxt, parent, re_opts
         self.parent_id = parent.parse_id
         @production_id = production.production_id
+        @context_id = ctxt.context_id
         @symbol_name = production.symbol_name
         @md = false
         @re = production.re
@@ -165,6 +189,8 @@ module Hipe
               @md[0]
             elsif @re_opts[:named_captures]
               Hash[@re_opts[:named_captures].zip(@md.captures)]
+            elsif @md.captures.size == 1
+              @md.captures[0]
             else
               @md.captures
             end
