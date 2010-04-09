@@ -3,7 +3,10 @@ require 'pp'
 me = File.dirname(__FILE__)+'/man-parse'
 require me + '/modulettes'
 require me + '/cli-litey'
-$:.unshift(File.expand_path('../../..',__FILE__)+'/hipe-parsie-0.0.0/lib')
+
+# if it's not a gem yet
+parsie_path = File.expand_path('../../..',__FILE__)+'/hipe-parsie-0.0.0/lib'
+$:.unshift(parsie_path) unless $:.include?(parsie_path)
 require 'hipe-parsie'
 
 module Hipe
@@ -32,7 +35,7 @@ module Hipe
         ui.print(man_exists?(command) ? 'yes' : 'no')
       end
 
-      o '[COMMAND]'
+      o '[OPTS] [COMMAND]'
       x "will you please try and parse it?"
       x "if COMMAND is provided, tries to read manpage for that,"
       x "else tries to read manpage-like data from STDIN"
@@ -41,14 +44,17 @@ module Hipe
       x 'Options:'
       x ParseOpts = lambda{|o|
         o.on('-v, --verbose', :verbose?,
-          'with each line(?) that you parse output debugging info to STDERR',
+          'with each token that you parse output debugging info to STDERR',
           '(always on for interactive STDIN mode)'
+        )
+        o.on('-F, --file', :file?,
+          'treat COMMAND as a filename to read manpage text from'
         )
       }
       def parse! opts, command=nil
         return help if opts[:h]
         return short_help unless opts.valid?(&ParseOpts)
-        instream, interactive = instream_interactive?(command)
+        instream, interactive = instream_interactive?(command, opts)
         if interactive && ! opts.verbose?
           opts[:verbose?] = true
         end
@@ -56,8 +62,11 @@ module Hipe
         process_parse opts, instream
       end
     private
-      def instream_interactive? command
-        if command.nil?
+      def instream_interactive? command, opts
+        if opts.file?
+          instream = File.open(command, 'r')
+          interactive = false
+        elsif command.nil?
           if $stdin.tty?
             instream = tty_to_instream
             interactive = true
@@ -170,19 +179,7 @@ module Hipe
         nil
       end
 
-      if (false)
-      # just here for reference, these are example options from manpages
-        s = <<-HERE
-          -metadata key=value
-          -loglevel loglevel
-          -h, -?, -help, --help
-          -C NUM, --context=NUM
-          -w or --path
-          -S  section_list
-          -A NUM, --after-context=NUM
-          --colour[=WHEN], --color[=WHEN]
-        HERE
-      end
+    public
 
       def grammar
         @grammar ||= Hash.new do |h,k|
@@ -195,17 +192,46 @@ module Hipe
         end
       end
 
+    private
+
       def new_man_page_grammar1
+s = <<-HERE
+just here for reference, these are example options from manpages
+
+  -metadata key=value
+  -loglevel loglevel
+  -h, -?, -help, --help
+  -C NUM, --context=NUM
+  -w or --path
+  -S  section_list
+  -A NUM, --after-context=NUM
+  --colour[=WHEN], --color[=WHEN]
+
+
+lessons we have learnt about making the regexen:
+\b stands for 'bad'  it's more strict than you might think
+*all* regexes should probably start with ^ or \A
+(depending on how your tokenizer works it's probably the same thing)
+*few* should end with $ or \Z
+
+
+HERE
+
+
+
         Hipe::Parsie::Grammar.new("generic man page") do |g|
           g.add :man_page,  [:before_options_header,
                               :options_header,
-                              :options_list]
+                              :options_list,
+                              :next_section,
+                              :stop
+                              ]
           g.add( :before_options_header,
                   [(1..-1), :not_option_line],
                  :capture => false
           )
-          g.add :not_option_line, /\A(?!OPTION)(.*)\Z/ #
-          g.add :options_header, /\A(OPTIONS)\Z/
+          g.add :not_option_line, /^(?!OPTION)(.*)$/ #
+          g.add :options_header, /^(OPTIONS)$/
           g.add :options_list, [(1..-1), :option_entry]
           g.add :option_entry,
             [:switches, :descriptions, :blank_lines]
@@ -213,10 +239,10 @@ module Hipe
           g.add :blank_line, /^( *)$/
           g.add :switches, [:switch, :more_switches]
           g.add :more_switches, [(0..-1), [:switch_separator, :switch]]
-          g.add :switch_separator, / *, */
-          g.add :switch_separator, / *\bor\b */
-          g.add( :switch, /\s*
-              (?:
+          g.add :switch_separator, /^ *, */
+          g.add :switch_separator, /^ *\bor\b */
+          g.add( :switch, /^\s{0,9}               # after 14 spaces begins
+              (?:                                #   the desc
                 (-[?a-z])                        # short name #1
                 |
                 (--?[a-z0-9][-_a-z0-9]+)         # long name #2
@@ -226,14 +252,14 @@ module Hipe
                 |
                 (?:
                   (?:(?:\s\s?|=)([_a-z]+))       # a val w. an equals
-                )                                # or a space #4
+                )                                #   or a space #4
                 |
                 (?: \s
                   ([_a-z]+=[_a-z]+)              # that crazy ffmpeg
-                                                 # key-value thing #5
+                                                 #   key-value thing #5
                 )
               )?
-              \b\s*                              # eat remaining w-s
+              \s*                              # eat remaining w-s
           /xi,                                   # case insensitive, allow
                                                  # whitespace in re
           :named_captures =>
@@ -241,7 +267,11 @@ module Hipe
               :optional, :required, :ridiculous_key_val]
           )
           g.add :descriptions, [(1..-1), :description]
-          g.add :description, /\A[[:space:]]{14}([^[:space:]].*)\Z/
+          g.add(:description, /^(?:[[:space:]]{14}|)([^[:space:]].*$)/)
+          # :named_captures => [:space_before, :content]
+          # )
+          g.add(:next_section, /^([^[:space:]]+)/)
+          g.add(:stop, :stop)
           g.reference_check
         end
       end # new_man_page_grammar_1
