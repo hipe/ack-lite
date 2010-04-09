@@ -1,6 +1,13 @@
 # @todo this should probably get StackeyStream from man-parse
 module Hipe
   module Parsie
+    module AbstractTokenizer
+      LooksLike.enhance(self).looks_like(:tokenizer).when_responds_to(*%w(
+        offset never_had_tokens?  has_no_more_tokens? get_context_near_end
+        get_context_near peek pop! push
+      ))
+    end
+
     module TokenizerDescribe
       def describe
         # assume there was peeking
@@ -8,8 +15,8 @@ module Hipe
         if use_offset == -1
           "at beginning of input"
         # elsif use_offset > last_offset
-        elsif is_at_end_of_input?
-          if is_emtpy_stream_or_file?
+        elsif has_no_more_tokens?
+          if never_had_tokens?
             "and had no input"
           else
             "at end of input near "+get_context_near_end
@@ -20,8 +27,14 @@ module Hipe
         end
       end
     end
+
     class StringLinesTokenizer
       include TokenizerDescribe
+      LooksLike.enhance(self).looks_like(:string).when_responds_to :split
+      #    looks_like_string()
+      #    doesnt_look_like_string_because()
+
+
       # this is a sandbox for experimenting with tokenizer interface,
       # for use possibly in something more uselful like in input stream
       # tokenizer
@@ -55,10 +68,10 @@ module Hipe
       def has_more_tokens?
         @offset < final_offset # b/c pop is the only way to go
       end
-      def is_at_end_of_input?
+      def has_no_more_tokens?
         (@offset + 1) > final_offset
       end
-      def is_emtpy_stream_or_file?
+      def never_had_tokens?
         @lines.length == 0
       end
       def final_offset
@@ -67,6 +80,7 @@ module Hipe
       def get_line_at idx
         @lines[idx]
       end
+      alias_method :token_at, :get_line_at # @todo rename
       def get_context_near x
         get_line_at(x).inspect
       end
@@ -75,37 +89,6 @@ module Hipe
       end
       def get_context_near_end
         get_line_at_final_offset.inspect
-      end
-    end
-    module StackTokenizerAdapter
-      These = %w(peek pop push)
-      class << self
-        def enhance(mixed)
-          mixed.extend(self)
-          if mixed.respond_to?(:pop) && ! mixed.respond_to?(:pop!)
-            class << mixed
-              alias_method :pop!, :pop
-            end
-          end
-          unless mixed.respond_to?(:describe)
-            mixed.extend(TokenizerDescribe)
-          end
-          mixed.stack_tokenzier_adapter_init
-          mixed
-        end
-        alias_method :[], :enhance
-        def looks_like_stack? mixed
-          doesnt_look_like_stack_because(mixed).empty?
-        end
-        def doesnt_look_like_stack_because mixed
-          missing = []
-          These.each do |this|
-            missing.push(this) unless mixed.respond_to?(this)
-          end
-          missing
-        end
-      end
-      def stack_tokenzier_adapter_init
       end
     end
   end

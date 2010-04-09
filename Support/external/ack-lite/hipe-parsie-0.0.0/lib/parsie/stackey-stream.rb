@@ -4,29 +4,34 @@ module Hipe
       # a.k.a. "stream lines tokenizer adapter"
       # modified from hipe-core
 
-      # LooksLike.enhance(self) do |it|
-      #   it.looks_like(:stack).if_responds_to %w(closed?, gets)
-      #   it.wont_override %w(peek pop push offset)
-      # end
+      LooksLike.enhance(self) do |l|
+        l.looks_like(:stack).if_responds_to? %w(closed? gets)
+        l.wont_override %w(push pop peek offset)
+      end
 
       class << self
+
         def enhance(mixed)
-          return mixed if mixed.kind_of?(StackeyStream)
-          if looks.ok? mixed
-            mixed.extend self
-            mixed.extend(TokenizerDescribe) unless mixed.respond_to?(:describe)
-            fail("must be an open stream") if mixed.closed?
-            mixed.singleton_class.alias_method(:pop!, :pop) unless
-              mixed.respond_to?(:pop!)
-          else
-            fail(looks.not_ok_because(mixed))
+          unless looks.ok?(mixed)
+            fail(doesnt_look_ok_because(mixed))
           end
+          MetaTools[mixed]
+          mixed.extend self
+          mixed.extend(TokenizerDescribe) unless
+            mixed.respond_to?(:describe)
+          fail("must be an open stream") if mixed.closed?
+          mixed.singleton_class.alias_method_unless_defined(:pop!, :pop)
+          mixed.stackey_stream_init
+          mixed
         end
+
         alias_method :[], :enhance
+
       end
 
       attr_reader :pushed, :fake_cache, :fake_stack, :has_data,
         :last_line_read, :num_lines_read
+
       def stackey_stream_init
         @offset = -1
         @fake_cache = {}

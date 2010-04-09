@@ -132,8 +132,7 @@ module Hipe
           define_define_method(thing) if thing.kind_of?(Module)
           add_class_singleton_accessor(thing)
           define_define_method(thing.singleton_class)
-          # add_class_singleton_accessor(thing.singleton_class)
-          # define_define_method(thing.singleton_class.singleton_class)
+          define_alias_thing(thing.singleton_class)
           thing
         end
         alias_method :[], :enhance
@@ -145,6 +144,17 @@ module Hipe
           sing.send(:define_method, :singleton_class){sing}
         end
         nil
+      end
+      def define_alias_thing(sing)
+        unless sing.respond_to? :alias_method_unless_defined
+          class << sing
+            def alias_method_unless_defined x, y
+              unless instance_methods.include? x.to_s
+                alias_method x, y
+              end
+            end
+          end
+        end
       end
       def define_define_method(sing)
         unless sing.respond_to? :define_method!
